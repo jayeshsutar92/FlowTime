@@ -1,6 +1,7 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Timer from "../components/timer";
 import {
+  savePreset,
   endSession,
   getApiErrorMessage,
   readDashboardCache,
@@ -71,6 +72,7 @@ function CustomTimer() {
   const [presetRefreshKey, setPresetRefreshKey] = useState(0);
   const [adaptiveBreak, setAdaptiveBreak] = useState(() => readDashboardCache()?.adaptiveBreak ?? null);
   const timerStorageKey = `flowtime-custom-timer-${work}-${breakTime}-${longBreakDuration}-${sessionsBeforeLongBreak}`;
+  const timerControlsRef = useRef(null);
 
   const handleNumberChange = (setter) => (event) => {
     setter(event.target.value === "" ? "" : Number(event.target.value));
@@ -177,78 +179,122 @@ function CustomTimer() {
     setPresetRefreshKey((current) => current + 1);
   };
 
+  const handleSavePreset = async () => {
+    const payload = {
+      name: `Preset ${work}-${breakTime}-${longBreakDuration}-${sessionsBeforeLongBreak}`,
+      work_duration: Number(work),
+      short_break: Number(breakTime),
+      long_break_duration: Number(longBreakDuration),
+      sessions_before_long_break: Number(sessionsBeforeLongBreak),
+    };
+
+    try {
+      await savePreset(payload);
+      setStatusMessage("Preset saved.");
+      setErrorMessage("");
+      setPresetRefreshKey((current) => current + 1);
+    } catch (err) {
+      console.error(err);
+      setErrorMessage(getApiErrorMessage(err, "Could not save preset."));
+    }
+  };
+
   return (
     <section className="screen">
-      <div className="card builder-card">
-        <h1 className="screen-title">Build your session</h1>
+      <div className="custom-builder-grid">
+        <section className="card custom-column-card">
+          <h1 className="screen-title">Build your session</h1>
 
-        <div className="field-grid">
-          <label className="field">
-            <span>Work duration (minutes)</span>
-            <input type="number" min="1" value={work} onChange={handleNumberChange(setWork)} />
-          </label>
+          <div className="field-grid">
+            <label className="field">
+              <span>Work duration (minutes)</span>
+              <input type="number" min="1" value={work} onChange={handleNumberChange(setWork)} />
+            </label>
 
-          <label className="field">
-            <span>Break duration (minutes)</span>
-            <input
-              type="number"
-              min="1"
-              value={breakTime}
-              onChange={handleNumberChange(setBreakTime)}
-            />
-          </label>
+            <label className="field">
+              <span>Break duration (minutes)</span>
+              <input
+                type="number"
+                min="1"
+                value={breakTime}
+                onChange={handleNumberChange(setBreakTime)}
+              />
+            </label>
 
-          <label className="field">
-            <span>Long break duration (minutes)</span>
-            <input
-              type="number"
-              min="1"
-              value={longBreakDuration}
-              onChange={handleNumberChange(setLongBreakDuration)}
-            />
-          </label>
+            <label className="field">
+              <span>Long break duration (minutes)</span>
+              <input
+                type="number"
+                min="1"
+                value={longBreakDuration}
+                onChange={handleNumberChange(setLongBreakDuration)}
+              />
+            </label>
 
-          <label className="field">
-            <span>Sessions before long break</span>
-            <input
-              type="number"
-              min="1"
-              value={sessionsBeforeLongBreak}
-              onChange={handleNumberChange(setSessionsBeforeLongBreak)}
-            />
-          </label>
-        </div>
+            <label className="field">
+              <span>Sessions before long break</span>
+              <input
+                type="number"
+                min="1"
+                value={sessionsBeforeLongBreak}
+                onChange={handleNumberChange(setSessionsBeforeLongBreak)}
+              />
+            </label>
+          </div>
 
-        <Timer
-          key={timerStorageKey}
-          work={work}
-          breakTime={breakTime}
-          longBreakDuration={longBreakDuration}
-          sessionsBeforeLongBreak={sessionsBeforeLongBreak}
-          totalSessions={sessionsBeforeLongBreak}
-          isStarting={isStartingSession}
-          storageKey={timerStorageKey}
-          onStart={handleStart}
-          onComplete={handleComplete}
-          statusMessage={statusMessage}
-          errorMessage={errorMessage}
-          startLabel="Start Session"
-          repeatCycles
-          adaptiveBreak={adaptiveBreak}
-          buildStartPayload={({
-            work,
-            breakTime,
-            totalSessions,
-            longBreakDuration,
-            sessionsBeforeLongBreak,
-          }) => ({
-            work_duration: Number(work),
-            break_duration: Number(breakTime),
-            total_sessions: Number(totalSessions),
-            long_break_duration: Number(longBreakDuration),
-            sessions_before_long_break: Number(sessionsBeforeLongBreak),
-          })}
-        />
+          <div className="custom-builder-actions">
+            <button
+              type="button"
+              className="action-button primary-button"
+              onClick={() => timerControlsRef.current?.start()}
+              disabled={isStartingSession}
+            >
+              {isStartingSession ? "Starting..." : "Start Session"}
+            </button>
+            <button
+              type="button"
+              className="action-button secondary-button"
+              onClick={handleSavePreset}
+            >
+              Save Preset
+            </button>
+          </div>
+        </section>
+
+        <section className="card timer-screen-card custom-column-card">
+          <h1 className="screen-title">Focus Time</h1>
+          <Timer
+            ref={timerControlsRef}
+            key={timerStorageKey}
+            work={work}
+            breakTime={breakTime}
+            longBreakDuration={longBreakDuration}
+            sessionsBeforeLongBreak={sessionsBeforeLongBreak}
+            totalSessions={sessionsBeforeLongBreak}
+            isStarting={isStartingSession}
+            storageKey={timerStorageKey}
+            onStart={handleStart}
+            onComplete={handleComplete}
+            statusMessage={statusMessage}
+            errorMessage={errorMessage}
+            startLabel="Start"
+            repeatCycles
+            adaptiveBreak={adaptiveBreak}
+            buildStartPayload={({
+              work,
+              breakTime,
+              totalSessions,
+              longBreakDuration,
+              sessionsBeforeLongBreak,
+            }) => ({
+              work_duration: Number(work),
+              break_duration: Number(breakTime),
+              total_sessions: Number(totalSessions),
+              long_break_duration: Number(longBreakDuration),
+              sessions_before_long_break: Number(sessionsBeforeLongBreak),
+            })}
+          />
+        </section>
 
         <Presets onApplyPreset={handleApplyPreset} refreshKey={presetRefreshKey} />
       </div>

@@ -88,6 +88,14 @@ def calculate_long_break(pomodoros_completed):
     return int(15 + 5 * (pomodoros_completed - 4))
 
 
+def should_use_long_break(current_session, total_sessions):
+    return (
+        total_sessions >= 5
+        and current_session % 4 == 0
+        and current_session < total_sessions
+    )
+
+
 def get_recent_session_metrics(limit=5):
     recent_sessions = list(
         Session.objects.order_by("-created_at").values("status", "work_duration")[:limit]
@@ -498,11 +506,17 @@ def start_session(request):
     )
     long_break = (
         calculate_long_break(session.current_session)
-        if session.current_session % 4 == 0
+        if should_use_long_break(session.current_session, session.total_sessions)
         else None
     )
     break_type = "long" if long_break is not None else "short"
     break_duration = long_break if long_break is not None else short_break
+    logger.info(
+        "start_session break decision current_session=%s total_sessions=%s break_type=%s",
+        session.current_session,
+        session.total_sessions,
+        break_type,
+    )
 
     data = {
         "session_id": session.id,

@@ -305,6 +305,38 @@ class SessionApiTests(APITestCase):
         self.assertEqual(response.data["data"]["break_type"], "long")
         self.assertEqual(response.data["data"]["break_duration"], 15)
 
+    def test_start_session_does_not_return_long_break_when_total_sessions_is_less_than_five(self):
+        response = self.client.post(
+            "/api/start-session/",
+            {
+                "work_duration": 50,
+                "break_duration": 10,
+                "total_sessions": 4,
+                "current_session": 4,
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(response.data["data"]["break_type"], "short")
+        self.assertNotIn("long_break", response.data["data"])
+
+    def test_start_session_does_not_return_long_break_for_last_session(self):
+        response = self.client.post(
+            "/api/start-session/",
+            {
+                "work_duration": 50,
+                "break_duration": 10,
+                "total_sessions": 8,
+                "current_session": 8,
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(response.data["data"]["break_type"], "short")
+        self.assertNotIn("long_break", response.data["data"])
+
     def test_start_session_uses_higher_adaptive_short_break_for_low_completion_rate(self):
         for _ in range(6):
             Session.objects.create(

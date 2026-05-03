@@ -1,8 +1,8 @@
-import { useCallback, useEffect, useMemo, useRef } from "react";
+import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef } from "react";
 import alarmSound from "../assets/alarm.wav";
 import useTimerStateContext from "../context/useTimerStateContext";
 
-function Timer({
+const Timer = forwardRef(function Timer({
   work = 25,
   breakTime = 5,
   longBreakDuration = breakTime,
@@ -18,7 +18,7 @@ function Timer({
   buildStartPayload,
   repeatCycles = false,
   adaptiveBreak = null,
-}) {
+}, ref) {
   const { getTimerState, updateTimerState } = useTimerStateContext();
   const fallbackState = useMemo(
     () => ({
@@ -87,7 +87,7 @@ function Timer({
     ]
   );
 
-  const startTimer = async () => {
+  const startTimer = useCallback(async () => {
     if (isRunning || isStarting) {
       return;
     }
@@ -110,20 +110,31 @@ function Timer({
       timerNotice: mode === "break" ? "Break Time" : "Focus Time",
       isRunning: true,
     }));
-  };
+  }, [
+    getStartPayload,
+    hasStartedCurrentSession,
+    isRunning,
+    isStarting,
+    mode,
+    onStart,
+    patchTimerState,
+  ]);
 
-  const pauseTimer = () =>
-    patchTimerState((current) => ({
-      ...current,
-      isRunning: false,
-    }));
+  const pauseTimer = useCallback(
+    () =>
+      patchTimerState((current) => ({
+        ...current,
+        isRunning: false,
+      })),
+    [patchTimerState]
+  );
 
-  const resetTimer = () => {
+  const resetTimer = useCallback(() => {
     patchTimerState({
       ...fallbackState,
       time: work * 60,
     });
-  };
+  }, [fallbackState, patchTimerState, work]);
 
   const playAlarm = useCallback(() => {
     if (!audioRef.current) {
@@ -239,6 +250,16 @@ function Timer({
     return () => clearInterval(interval);
   }, [handlePhaseComplete, isRunning, patchTimerState]);
 
+  useImperativeHandle(
+    ref,
+    () => ({
+      start: startTimer,
+      pause: pauseTimer,
+      reset: resetTimer,
+    }),
+    [pauseTimer, resetTimer, startTimer]
+  );
+
   const minutes = Math.floor(time / 60);
   const seconds = time % 60;
   const isUpcomingLongBreak = currentSession % resolvedSessionsBeforeLongBreak === 0;
@@ -312,6 +333,6 @@ function Timer({
       <audio ref={audioRef} src={alarmSound} preload="auto" />
     </section>
   );
-}
+});
 
 export default Timer;
