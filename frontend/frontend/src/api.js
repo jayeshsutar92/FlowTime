@@ -51,6 +51,33 @@ const normalizePresets = (data) => {
 
 const unwrapApiData = (payload) => payload?.data ?? payload ?? null;
 
+const sanitizeSessionPayload = (payload) => {
+  const numericFields = new Set([
+    "work_duration",
+    "break_duration",
+    "total_sessions",
+    "long_break_duration",
+    "sessions_before_long_break",
+  ]);
+
+  return Object.entries(payload).reduce((sanitizedPayload, [key, value]) => {
+    if (value === undefined || value === null || value === "") {
+      return sanitizedPayload;
+    }
+
+    const normalizedValue = numericFields.has(key) ? Number(value) : value;
+
+    if (numericFields.has(key) && Number.isNaN(normalizedValue)) {
+      return sanitizedPayload;
+    }
+
+    return {
+      ...sanitizedPayload,
+      [key]: normalizedValue,
+    };
+  }, {});
+};
+
 const extractAdaptiveBreak = (...sources) => {
   for (const source of sources) {
     const breakDuration = source?.break_duration;
@@ -161,8 +188,14 @@ export const resetPassword = async (payload) => {
 };
 
 export const startSession = async (payload) => {
-  const response = await apiClient.post("start-session/", payload);
-  return response.data;
+  const requestBody = sanitizeSessionPayload(payload);
+  const response = await apiClient.post("start-session/", JSON.stringify(requestBody), {
+    headers: {
+      "Content-Type": "application/json",
+    },
+  });
+  console.log("start-session response", response.data);
+  return unwrapApiData(response.data);
 };
 
 export const endSession = async (payload) => {

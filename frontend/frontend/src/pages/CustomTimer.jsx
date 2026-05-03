@@ -116,16 +116,16 @@ function CustomTimer() {
     console.log("start-session payload", validation.payload);
 
     try {
-      const data = await startSession(validation.payload);
+      const sessionData = await startSession(validation.payload);
 
-      if (!data?.session_id) {
+      if (!sessionData?.session_id) {
         setStatusMessage("");
         setErrorMessage("Invalid session data");
         setSessionId(null);
         return false;
       }
 
-      setSessionId(data.session_id);
+      setSessionId(sessionData.session_id);
       setStatusMessage("Session started.");
       return true;
     } catch (err) {

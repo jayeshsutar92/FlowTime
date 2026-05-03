@@ -22,6 +22,7 @@ from .serializers import (
     SessionTransitionSerializer,
     SignupSerializer,
     StartSessionSerializer,
+    StartSessionResponseSerializer,
 )
 
 logger = logging.getLogger(__name__)
@@ -80,7 +81,7 @@ def get_adaptive_break_factor():
 
 
 def calculate_short_break(work_duration, k=0.2):
-    return int(5 + k * (work_duration - 25))
+    return max(0, int(5 + k * (work_duration - 25)))
 
 
 def calculate_long_break(pomodoros_completed):
@@ -466,6 +467,7 @@ def get_insights(request):
 
 @api_view(["POST"])
 def start_session(request):
+    logger.info("start_session request data=%s", request.data)
     serializer = StartSessionSerializer(data=request.data)
     if not serializer.is_valid():
         return error_response(
@@ -516,9 +518,25 @@ def start_session(request):
     if long_break is not None:
         data["long_break"] = long_break
 
+    response_serializer = StartSessionResponseSerializer(data=data)
+    if not response_serializer.is_valid():
+        logger.error(
+            "start_session invalid response payload request=%s response=%s errors=%s",
+            request.data,
+            data,
+            response_serializer.errors,
+        )
+        return error_response(
+            "Invalid start session payload.",
+            status.HTTP_400_BAD_REQUEST,
+            response_serializer.errors,
+        )
+
+    logger.info("start_session response data=%s", response_serializer.validated_data)
+
     return success_response(
         "Session started",
-        data,
+        response_serializer.validated_data,
         status_code=status.HTTP_201_CREATED,
     )
 

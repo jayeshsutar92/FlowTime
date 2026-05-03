@@ -104,6 +104,19 @@ class StartSessionSerializer(serializers.Serializer):
         return attrs
 
 
+class StartSessionResponseSerializer(serializers.Serializer):
+    session_id = serializers.IntegerField(min_value=1)
+    total_sessions = serializers.IntegerField(min_value=1)
+    current_session = serializers.IntegerField(min_value=1)
+    status = serializers.ChoiceField(choices=[Session.STATUS_RUNNING])
+    short_break = serializers.IntegerField(min_value=0)
+    break_type = serializers.ChoiceField(choices=["short", "long"])
+    break_duration = serializers.IntegerField(min_value=0)
+    adjusted = serializers.BooleanField()
+    adjustment_reason = serializers.CharField(required=False, allow_null=True)
+    long_break = serializers.IntegerField(min_value=0, required=False)
+
+
 class SessionTransitionSerializer(serializers.Serializer):
     session_id = serializers.IntegerField(min_value=1)
 

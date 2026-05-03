@@ -255,6 +255,37 @@ class SessionApiTests(APITestCase):
         self.assertEqual(response.data["data"]["total_sessions"], 4)
         self.assertEqual(response.data["data"]["current_session"], 1)
         self.assertFalse(response.data["data"]["adjusted"])
+        self.assertEqual(response.data["data"]["status"], Session.STATUS_RUNNING)
+        self.assertIsInstance(response.data["data"]["session_id"], int)
+        self.assertIsInstance(response.data["data"]["total_sessions"], int)
+        self.assertIsInstance(response.data["data"]["current_session"], int)
+        self.assertIsInstance(response.data["data"]["status"], str)
+        self.assertIsInstance(response.data["data"]["break_type"], str)
+        self.assertIsInstance(response.data["data"]["break_duration"], int)
+
+    def test_start_session_response_contains_required_non_null_fields(self):
+        response = self.client.post(
+            "/api/start-session/",
+            {
+                "work_duration": 25,
+                "break_duration": 5,
+                "total_sessions": 4,
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        data = response.data["data"]
+        self.assertIsNotNone(data["session_id"])
+        self.assertIsNotNone(data["total_sessions"])
+        self.assertIsNotNone(data["current_session"])
+        self.assertIsNotNone(data["status"])
+        self.assertIsNotNone(data["break_type"])
+        self.assertIsNotNone(data["break_duration"])
+        self.assertGreater(data["total_sessions"], 0)
+        self.assertGreaterEqual(data["current_session"], 1)
+        self.assertGreaterEqual(data["break_duration"], 0)
+        self.assertEqual(data["status"], Session.STATUS_RUNNING)
 
     def test_start_session_returns_long_break_on_fourth_cycle(self):
         response = self.client.post(
@@ -305,6 +336,21 @@ class SessionApiTests(APITestCase):
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
         self.assertEqual(response.data["data"]["short_break"], 11)
         self.assertEqual(response.data["data"]["break_duration"], 11)
+
+    def test_start_session_clamps_break_duration_to_non_negative_value(self):
+        response = self.client.post(
+            "/api/start-session/",
+            {
+                "work_duration": 1,
+                "break_duration": 1,
+                "total_sessions": 4,
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertGreaterEqual(response.data["data"]["break_duration"], 0)
+        self.assertGreaterEqual(response.data["data"]["short_break"], 0)
 
     def test_start_session_reduces_workload_when_recent_completion_rate_is_low(self):
         for _ in range(4):
