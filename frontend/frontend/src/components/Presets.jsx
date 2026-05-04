@@ -43,7 +43,7 @@ function Presets({ onApplyPreset, refreshKey = 0 }) {
   };
 
   return (
-    <section className="card presets-card custom-column-card">
+    <section className="card presets-card custom-column-card w-full lg:w-1/3 min-w-[280px] max-w-full flex flex-col p-6 border border-red-500">
       <h2 className="section-title">Quick Apply</h2>
 
       {isLoading ? <p className="feedback-message">Loading presets...</p> : null}
@@ -56,10 +56,10 @@ function Presets({ onApplyPreset, refreshKey = 0 }) {
         <p className="feedback-message">No presets saved yet.</p>
       ) : null}
 
-      <div className="preset-list">
+      <div className="preset-list flex flex-col gap-4 w-full">
         {presets.map((preset) => (
-          <article key={preset.id} className="preset-card">
-            <div className="preset-copy">
+          <article key={preset.id} className="preset-card w-full flex flex-col gap-2 min-w-0">
+            <div className="preset-copy whitespace-normal break-words">
               <h3>{preset.name}</h3>
               <p>
                 {preset.work_duration} min focus | {preset.short_break} min break |{" "}
@@ -67,7 +67,7 @@ function Presets({ onApplyPreset, refreshKey = 0 }) {
               </p>
             </div>
 
-            <div className="preset-actions">
+            <div className="preset-actions flex flex-wrap gap-2 mt-2">
               <button
                 type="button"
                 className="action-button secondary-button"

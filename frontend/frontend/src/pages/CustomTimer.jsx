@@ -201,14 +201,21 @@ function CustomTimer() {
 
   return (
     <section className="screen">
-      <div className="custom-builder-grid">
-        <section className="card custom-column-card">
+      <div className="max-w-7xl mx-auto px-6">
+        <div className="flex flex-col lg:flex-row gap-6 items-start">
+          <section className="card custom-column-card w-full lg:w-1/3 min-w-[280px] max-w-full flex flex-col p-6 border border-red-500">
           <h1 className="screen-title">Build your session</h1>
 
           <div className="field-grid">
             <label className="field">
               <span>Work duration (minutes)</span>
-              <input type="number" min="1" value={work} onChange={handleNumberChange(setWork)} />
+              <input
+                type="number"
+                min="1"
+                value={work}
+                onChange={handleNumberChange(setWork)}
+                className="w-full"
+              />
             </label>
 
             <label className="field">
@@ -218,6 +225,7 @@ function CustomTimer() {
                 min="1"
                 value={breakTime}
                 onChange={handleNumberChange(setBreakTime)}
+                className="w-full"
               />
             </label>
 
@@ -228,6 +236,7 @@ function CustomTimer() {
                 min="1"
                 value={longBreakDuration}
                 onChange={handleNumberChange(setLongBreakDuration)}
+                className="w-full"
               />
             </label>
 
@@ -238,6 +247,7 @@ function CustomTimer() {
                 min="1"
                 value={sessionsBeforeLongBreak}
                 onChange={handleNumberChange(setSessionsBeforeLongBreak)}
+                className="w-full"
               />
             </label>
           </div>
@@ -261,7 +271,7 @@ function CustomTimer() {
           </div>
         </section>
 
-        <section className="card timer-screen-card custom-column-card">
+          <section className="card timer-screen-card custom-column-card w-full lg:w-1/3 min-w-[280px] max-w-full flex flex-col items-center justify-center p-6 border border-red-500">
           <h1 className="screen-title">Focus Time</h1>
           <Timer
             ref={timerControlsRef}
@@ -296,7 +306,8 @@ function CustomTimer() {
           />
         </section>
 
-        <Presets onApplyPreset={handleApplyPreset} refreshKey={presetRefreshKey} />
+          <Presets onApplyPreset={handleApplyPreset} refreshKey={presetRefreshKey} />
+        </div>
       </div>
     </section>
   );
