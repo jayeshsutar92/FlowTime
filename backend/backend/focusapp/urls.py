@@ -15,6 +15,11 @@ urlpatterns = [
     path('productivity-score/', views.get_productivity_score),
     path('heatmap/', views.get_heatmap),
     path('save-preset/', views.save_preset),
-    path('presets/', views.get_presets),
+    path('presets/', views.presets_collection),
+    path('presets/<int:id>/', views.delete_preset_by_id),
     path('delete-preset/<int:id>/', views.delete_preset),
+    path('music/upload/', views.upload_music),
+    path('music/tracks/', views.list_music_tracks),
+    path('music/queue/', views.music_queue),
+    path('music/queue/<int:id>/', views.delete_music_queue_item),
 ]

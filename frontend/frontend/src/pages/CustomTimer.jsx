@@ -255,14 +255,6 @@ function CustomTimer() {
           <div className="custom-builder-actions">
             <button
               type="button"
-              className="action-button primary-button"
-              onClick={() => timerControlsRef.current?.start()}
-              disabled={isStartingSession}
-            >
-              {isStartingSession ? "Starting..." : "Start Session"}
-            </button>
-            <button
-              type="button"
               className="action-button secondary-button"
               onClick={handleSavePreset}
             >

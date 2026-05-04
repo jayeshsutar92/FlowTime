@@ -4,7 +4,7 @@ from django.core.exceptions import ValidationError as DjangoValidationError
 from django.db.models import Q
 from rest_framework import serializers
 
-from .models import Preset, Session
+from .models import MusicTrack, Preset, Session
 
 User = get_user_model()
 
@@ -146,3 +146,26 @@ class PresetSerializer(serializers.ModelSerializer):
         model = Preset
         fields = ["id", "name", "work_duration", "short_break", "long_break"]
         read_only_fields = ["id"]
+
+
+class PresetCreateSerializer(serializers.Serializer):
+    name = serializers.CharField(required=True, allow_blank=False, trim_whitespace=True)
+    work_duration = serializers.IntegerField(min_value=1)
+    break_duration = serializers.IntegerField(min_value=1)
+    long_break_duration = serializers.IntegerField(
+        min_value=1,
+        required=False,
+        allow_null=True,
+    )
+    sessions_before_long_break = serializers.IntegerField(
+        min_value=1,
+        required=False,
+        allow_null=True,
+    )
+
+
+class MusicTrackSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = MusicTrack
+        fields = ["id", "name", "file_path", "duration", "created_at"]
+        read_only_fields = fields

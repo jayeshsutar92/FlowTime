@@ -1,9 +1,11 @@
 import logging
+import os
 import random
 from datetime import timedelta
 from django.contrib.auth import get_user_model, login
 from django.contrib.auth.hashers import check_password, make_password
 from django.core.mail import send_mail
+from django.db import IntegrityError
 from django.db.models import Avg, Count, Sum
 from django.db.models.functions import ExtractHour, TruncDate
 from django.conf import settings
@@ -12,17 +14,18 @@ from rest_framework import status
 from rest_framework.decorators import api_view
 from rest_framework.response import Response
 
-from .models import OTPVerification, Preset, Session
+from .models import MusicTrack, OTPVerification, Preset, Session
 from .serializers import (
     ForgotPasswordSerializer,
     LoginSerializer,
-    PresetSerializer,
+    PresetCreateSerializer,
     ResetPasswordSerializer,
     SessionSerializer,
     SessionTransitionSerializer,
     SignupSerializer,
     StartSessionSerializer,
     StartSessionResponseSerializer,
+    MusicTrackSerializer,
 )
 
 logger = logging.getLogger(__name__)
@@ -41,6 +44,14 @@ def error_response(message, status_code, details=None):
 
 def auth_error_response(message, details=None, status_code=status.HTTP_400_BAD_REQUEST):
     return Response({"message": message, "data": details}, status=status_code)
+
+
+def simple_error_response(message, details=None, status_code=status.HTTP_400_BAD_REQUEST):
+    return Response({"message": message, "data": details}, status=status_code)
+
+
+ALLOWED_AUDIO_EXTENSIONS = {".mp3", ".wav", ".ogg", ".aac", ".flac", ".m4a"}
+MUSIC_QUEUE = []
 
 
 def parse_days_filter(days_value):
@@ -642,18 +653,35 @@ def get_stats(request):
 
 @api_view(["POST"])
 def save_preset(request):
-    serializer = PresetSerializer(data=request.data)
+    payload = normalize_preset_request_payload(request.data)
+    serializer = PresetCreateSerializer(data=payload)
     if not serializer.is_valid():
-        return error_response(
+        return simple_error_response(
             "Invalid preset payload.",
-            status.HTTP_400_BAD_REQUEST,
             serializer.errors,
+            status_code=status.HTTP_400_BAD_REQUEST,
         )
 
-    preset = serializer.save()
+    validated = serializer.validated_data
+    long_break_duration = validated.get("long_break_duration") or 15
+    sessions_before_long_break = validated.get("sessions_before_long_break")
+
+    try:
+        preset = Preset.objects.create(
+            name=validated["name"],
+            work_duration=validated["work_duration"],
+            short_break=validated["break_duration"],
+            long_break=long_break_duration,
+        )
+    except IntegrityError:
+        return simple_error_response(
+            "Preset name already exists.",
+            status_code=status.HTTP_400_BAD_REQUEST,
+        )
+
     return success_response(
         "Preset saved",
-        {"id": preset.id},
+        build_preset_payload(preset, sessions_before_long_break),
         status_code=status.HTTP_201_CREATED,
     )
 
@@ -661,8 +689,10 @@ def save_preset(request):
 @api_view(["GET"])
 def get_presets(request):
     presets = Preset.objects.all().order_by("-id")
-    serializer = PresetSerializer(presets, many=True)
-    return success_response("Presets fetched", serializer.data)
+    return success_response(
+        "Presets fetched",
+        [build_preset_payload(preset) for preset in presets],
+    )
 
 
 @api_view(["GET"])
@@ -671,12 +701,190 @@ def get_sessions(request):
     return success_response("Sessions fetched successfully.", serializer.data)
 
 
+def build_preset_payload(preset, sessions_before_long_break=None):
+    created_at = getattr(preset, "created_at", None)
+    created_at_value = created_at.isoformat() if created_at else None
+    payload = {
+        "id": preset.id,
+        "name": preset.name,
+        "work_duration": preset.work_duration,
+        "break_duration": preset.short_break,
+        "long_break_duration": preset.long_break,
+        "sessions_before_long_break": sessions_before_long_break,
+        "created_at": created_at_value,
+    }
+    payload["short_break"] = preset.short_break
+    payload["long_break"] = preset.long_break
+    return payload
+
+
+def normalize_preset_request_payload(raw_payload):
+    return {
+        "name": raw_payload.get("name"),
+        "work_duration": raw_payload.get("work_duration"),
+        "break_duration": raw_payload.get("break_duration", raw_payload.get("short_break")),
+        "long_break_duration": raw_payload.get(
+            "long_break_duration",
+            raw_payload.get("long_break"),
+        ),
+        "sessions_before_long_break": raw_payload.get("sessions_before_long_break"),
+    }
+
+
+@api_view(["GET", "POST"])
+def presets_collection(request):
+    if request.method == "GET":
+        presets = Preset.objects.all().order_by("-id")
+        return success_response(
+            "Presets fetched",
+            [build_preset_payload(preset) for preset in presets],
+        )
+
+    payload = normalize_preset_request_payload(request.data)
+    serializer = PresetCreateSerializer(data=payload)
+    if not serializer.is_valid():
+        return simple_error_response(
+            "Invalid preset payload.",
+            serializer.errors,
+            status_code=status.HTTP_400_BAD_REQUEST,
+        )
+
+    validated = serializer.validated_data
+    long_break_duration = validated.get("long_break_duration") or 15
+    sessions_before_long_break = validated.get("sessions_before_long_break")
+
+    try:
+        preset = Preset.objects.create(
+            name=validated["name"],
+            work_duration=validated["work_duration"],
+            short_break=validated["break_duration"],
+            long_break=long_break_duration,
+        )
+    except IntegrityError:
+        return simple_error_response(
+            "Preset name already exists.",
+            status_code=status.HTTP_400_BAD_REQUEST,
+        )
+
+    return success_response(
+        "Preset created",
+        build_preset_payload(preset, sessions_before_long_break),
+        status_code=status.HTTP_201_CREATED,
+    )
+
+
 @api_view(["DELETE"])
 def delete_preset(request, id):
     try:
         preset = Preset.objects.get(id=id)
     except Preset.DoesNotExist:
-        return error_response("Preset not found", status.HTTP_404_NOT_FOUND)
+        return simple_error_response(
+            "Preset not found",
+            status_code=status.HTTP_404_NOT_FOUND,
+        )
 
     preset.delete()
     return success_response("Preset deleted", None)
+
+
+@api_view(["DELETE"])
+def delete_preset_by_id(request, id):
+    return delete_preset(request, id)
+
+
+def parse_optional_int(value, field_name):
+    if value in (None, ""):
+        return None
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError):
+        return f"{field_name} must be an integer."
+    if parsed <= 0:
+        return f"{field_name} must be a positive integer."
+    return parsed
+
+
+def get_music_track(track_id):
+    try:
+        return MusicTrack.objects.get(id=track_id)
+    except MusicTrack.DoesNotExist:
+        return None
+
+
+@api_view(["POST"])
+def upload_music(request):
+    uploaded_file = request.FILES.get("file")
+    name = request.data.get("name")
+
+    if uploaded_file is not None:
+        _, ext = os.path.splitext(uploaded_file.name)
+        if ext.lower() not in ALLOWED_AUDIO_EXTENSIONS:
+            return simple_error_response(
+                "Unsupported file type.",
+                {"allowed_extensions": sorted(ALLOWED_AUDIO_EXTENSIONS)},
+                status.HTTP_400_BAD_REQUEST,
+            )
+        if not name:
+            name = uploaded_file.name
+
+    if not name:
+        return simple_error_response("Name is required when no file is provided.")
+
+    duration = parse_optional_int(request.data.get("duration"), "duration")
+    if isinstance(duration, str):
+        return simple_error_response(duration)
+
+    file_path = uploaded_file.name if uploaded_file is not None else None
+    track = MusicTrack.objects.create(
+        name=name,
+        file_path=file_path,
+        duration=duration,
+    )
+
+    return success_response(
+        "Track metadata stored",
+        {"track_id": track.id, "name": track.name},
+        status_code=status.HTTP_201_CREATED,
+    )
+
+
+@api_view(["GET"])
+def list_music_tracks(request):
+    tracks = MusicTrack.objects.all()
+    serializer = MusicTrackSerializer(tracks, many=True)
+    return success_response("Tracks fetched", serializer.data)
+
+
+@api_view(["GET", "POST"])
+def music_queue(request):
+    if request.method == "GET":
+        if not MUSIC_QUEUE:
+            return success_response("Queue fetched", [])
+
+        unique_ids = list(dict.fromkeys(MUSIC_QUEUE))
+        tracks = MusicTrack.objects.filter(id__in=unique_ids)
+        track_map = {track.id: track for track in tracks}
+        ordered_tracks = [track_map[item_id] for item_id in MUSIC_QUEUE if item_id in track_map]
+        serializer = MusicTrackSerializer(ordered_tracks, many=True)
+        return success_response("Queue fetched", serializer.data)
+
+    track_id = request.data.get("track_id")
+    track_id = parse_optional_int(track_id, "track_id")
+    if isinstance(track_id, str) or track_id is None:
+        return simple_error_response("track_id is required and must be an integer.")
+
+    track = get_music_track(track_id)
+    if track is None:
+        return simple_error_response("Invalid track_id.", status_code=status.HTTP_404_NOT_FOUND)
+
+    MUSIC_QUEUE.append(track.id)
+    return success_response("Track queued", {"track_id": track.id})
+
+
+@api_view(["DELETE"])
+def delete_music_queue_item(request, id):
+    if id not in MUSIC_QUEUE:
+        return simple_error_response("Track not in queue.", status_code=status.HTTP_404_NOT_FOUND)
+
+    MUSIC_QUEUE.remove(id)
+    return success_response("Track removed", {"track_id": id})

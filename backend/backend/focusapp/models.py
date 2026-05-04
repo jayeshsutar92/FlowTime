@@ -88,3 +88,16 @@ class OTPVerification(models.Model):
 
     def __str__(self):
         return f"{self.user_id}:{self.purpose}"
+
+
+class MusicTrack(models.Model):
+    name = models.CharField(max_length=255)
+    file_path = models.CharField(max_length=500, blank=True, null=True)
+    duration = models.IntegerField(blank=True, null=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-created_at", "-id"]
+
+    def __str__(self):
+        return self.name
