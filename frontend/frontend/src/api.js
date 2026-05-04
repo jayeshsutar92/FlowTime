@@ -281,4 +281,56 @@ export const deletePreset = async (presetId) => {
   return data;
 };
 
+const normalizeListResponse = (data) => {
+  if (Array.isArray(data)) {
+    return data;
+  }
+
+  if (Array.isArray(data?.data)) {
+    return data.data;
+  }
+
+  return [];
+};
+
+export const fetchMusicTracks = async () => {
+  const response = await apiClient.get("music/tracks/");
+  return normalizeListResponse(response.data);
+};
+
+export const uploadMusicTrack = async ({ name, file }) => {
+  const formData = new FormData();
+
+  if (name) {
+    formData.append("name", name);
+  }
+
+  if (file) {
+    formData.append("file", file);
+  }
+
+  const response = await apiClient.post("music/upload/", formData, {
+    headers: {
+      "Content-Type": "multipart/form-data",
+    },
+  });
+
+  return unwrapApiData(response.data);
+};
+
+export const fetchMusicQueue = async () => {
+  const response = await apiClient.get("music/queue/");
+  return normalizeListResponse(response.data);
+};
+
+export const enqueueMusicTrack = async (trackId) => {
+  const response = await apiClient.post("music/queue/", { track_id: trackId });
+  return unwrapApiData(response.data);
+};
+
+export const removeQueueItem = async (trackId) => {
+  const response = await apiClient.delete(`music/queue/${trackId}/`);
+  return unwrapApiData(response.data);
+};
+
 export default apiClient;

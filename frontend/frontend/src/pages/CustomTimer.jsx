@@ -8,6 +8,7 @@ import {
   refreshDashboardSnapshot,
   startSession,
 } from "../api";
+import MusicPlayer from "../components/MusicPlayer";
 import Presets from "../components/Presets";
 
 const CUSTOM_TIMER_SETTINGS_KEY = "flowtime-custom-settings";
@@ -201,13 +202,12 @@ function CustomTimer() {
 
   return (
     <section className="screen">
-      <div className="max-w-7xl mx-auto px-6">
-        <div className="flex flex-col lg:flex-row gap-6 items-start">
-          <section className="card custom-column-card w-full lg:w-1/3 min-w-[280px] max-w-full flex flex-col p-6 border border-red-500">
-          <h1 className="screen-title">Build your session</h1>
+      <div className="max-w-xl mx-auto px-4 flex flex-col gap-6">
+        <div className="bg-white dark:bg-gray-900 rounded-xl shadow-md p-6 flex flex-col w-full space-y-4">
+          <h1 className="screen-title w-full">Build your session</h1>
 
-          <div className="field-grid">
-            <label className="field">
+          <div className="field-grid w-full">
+            <label className="field w-full">
               <span>Work duration (minutes)</span>
               <input
                 type="number"
@@ -218,7 +218,7 @@ function CustomTimer() {
               />
             </label>
 
-            <label className="field">
+            <label className="field w-full">
               <span>Break duration (minutes)</span>
               <input
                 type="number"
@@ -229,7 +229,7 @@ function CustomTimer() {
               />
             </label>
 
-            <label className="field">
+            <label className="field w-full">
               <span>Long break duration (minutes)</span>
               <input
                 type="number"
@@ -240,7 +240,7 @@ function CustomTimer() {
               />
             </label>
 
-            <label className="field">
+            <label className="field w-full">
               <span>Sessions before long break</span>
               <input
                 type="number"
@@ -252,53 +252,60 @@ function CustomTimer() {
             </label>
           </div>
 
-          <div className="custom-builder-actions">
+          <div className="custom-builder-actions w-full">
             <button
               type="button"
-              className="action-button secondary-button"
+              className="action-button secondary-button w-full"
               onClick={handleSavePreset}
             >
               Save Preset
             </button>
           </div>
-        </section>
+        </div>
 
-          <section className="card timer-screen-card custom-column-card w-full lg:w-1/3 min-w-[280px] max-w-full flex flex-col items-center justify-center p-6 border border-red-500">
-          <h1 className="screen-title">Focus Time</h1>
-          <Timer
-            ref={timerControlsRef}
-            key={timerStorageKey}
-            work={work}
-            breakTime={breakTime}
-            longBreakDuration={longBreakDuration}
-            sessionsBeforeLongBreak={sessionsBeforeLongBreak}
-            totalSessions={sessionsBeforeLongBreak}
-            isStarting={isStartingSession}
-            storageKey={timerStorageKey}
-            onStart={handleStart}
-            onComplete={handleComplete}
-            statusMessage={statusMessage}
-            errorMessage={errorMessage}
-            startLabel="Start"
-            repeatCycles
-            adaptiveBreak={adaptiveBreak}
-            buildStartPayload={({
-              work,
-              breakTime,
-              totalSessions,
-              longBreakDuration,
-              sessionsBeforeLongBreak,
-            }) => ({
-              work_duration: Number(work),
-              break_duration: Number(breakTime),
-              total_sessions: Number(totalSessions),
-              long_break_duration: Number(longBreakDuration),
-              sessions_before_long_break: Number(sessionsBeforeLongBreak),
-            })}
-          />
-        </section>
+        <div className="bg-white dark:bg-gray-900 rounded-xl shadow-md p-6 flex flex-col w-full space-y-4 items-center justify-center">
+          <h1 className="screen-title w-full text-center">Focus Time</h1>
+          <div className="w-full">
+            <Timer
+              ref={timerControlsRef}
+              key={timerStorageKey}
+              work={work}
+              breakTime={breakTime}
+              longBreakDuration={longBreakDuration}
+              sessionsBeforeLongBreak={sessionsBeforeLongBreak}
+              totalSessions={sessionsBeforeLongBreak}
+              isStarting={isStartingSession}
+              storageKey={timerStorageKey}
+              onStart={handleStart}
+              onComplete={handleComplete}
+              statusMessage={statusMessage}
+              errorMessage={errorMessage}
+              startLabel="Start"
+              repeatCycles
+              adaptiveBreak={adaptiveBreak}
+              buildStartPayload={({
+                work,
+                breakTime,
+                totalSessions,
+                longBreakDuration,
+                sessionsBeforeLongBreak,
+              }) => ({
+                work_duration: Number(work),
+                break_duration: Number(breakTime),
+                total_sessions: Number(totalSessions),
+                long_break_duration: Number(longBreakDuration),
+                sessions_before_long_break: Number(sessionsBeforeLongBreak),
+              })}
+            />
+          </div>
+        </div>
 
+        <div className="bg-white dark:bg-gray-900 rounded-xl shadow-md p-6 flex flex-col w-full space-y-4">
           <Presets onApplyPreset={handleApplyPreset} refreshKey={presetRefreshKey} />
+        </div>
+
+        <div className="bg-white dark:bg-gray-900 rounded-xl shadow-md p-6 flex flex-col w-full space-y-4">
+          <MusicPlayer />
         </div>
       </div>
     </section>
