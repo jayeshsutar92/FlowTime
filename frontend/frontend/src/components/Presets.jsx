@@ -43,8 +43,8 @@ function Presets({ onApplyPreset, refreshKey = 0 }) {
   };
 
   return (
-    <div className="w-full min-w-0 flex flex-col">
-      <h2 className="section-title w-full">Quick Apply</h2>
+    <div className="w-full min-w-0 flex flex-col gap-4">
+      <h2 className="section-title">Quick Apply</h2>
 
       {isLoading ? <p className="feedback-message">Loading presets...</p> : null}
       {errorMessage ? (
@@ -56,10 +56,13 @@ function Presets({ onApplyPreset, refreshKey = 0 }) {
         <p className="feedback-message">No presets saved yet.</p>
       ) : null}
 
-      <div className="preset-list flex flex-col space-y-4 w-full">
+      <div className="preset-list w-full min-w-0 overflow-hidden flex flex-col gap-4">
         {presets.map((preset) => (
-          <article key={preset.id} className="preset-card flex flex-col gap-2 w-full min-w-0">
-            <div className="preset-copy whitespace-normal break-words w-full">
+          <article
+            key={preset.id}
+            className="preset-card w-full min-w-0 flex justify-between items-center gap-4"
+          >
+            <div className="preset-copy w-full min-w-0 break-words">
               <h3>{preset.name}</h3>
               <p>
                 {preset.work_duration} min focus | {preset.short_break} min break |{" "}
@@ -67,7 +70,7 @@ function Presets({ onApplyPreset, refreshKey = 0 }) {
               </p>
             </div>
 
-            <div className="preset-actions flex gap-2 flex-wrap w-full">
+            <div className="preset-actions flex flex-col gap-2 shrink-0">
               <button
                 type="button"
                 className="action-button secondary-button"

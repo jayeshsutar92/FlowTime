@@ -8,7 +8,6 @@ import {
   refreshDashboardSnapshot,
   startSession,
 } from "../api";
-import MusicPlayer from "../components/MusicPlayer";
 import Presets from "../components/Presets";
 
 const CUSTOM_TIMER_SETTINGS_KEY = "flowtime-custom-settings";
@@ -189,6 +188,16 @@ function CustomTimer() {
       sessions_before_long_break: Number(sessionsBeforeLongBreak),
     };
 
+    if(
+      !payload.work_duration ||
+      !payload.short_break ||
+      !payload.long_break_duration ||
+      !payload.sessions_before_long_break
+    ) {
+      setErrorMessage("Please fill in all fields.");
+      return;
+    }
+
     try {
       await savePreset(payload);
       setStatusMessage("Preset saved.");
@@ -200,116 +209,102 @@ function CustomTimer() {
     }
   };
 
-  return (
-    <section className="screen">
-      <div className="max-w-xl mx-auto px-4 flex flex-col gap-6">
-        <div className="bg-white dark:bg-gray-900 rounded-xl shadow-md p-6 flex flex-col w-full space-y-4">
-          <h1 className="screen-title w-full">Build your session</h1>
+return (
+  <section className="screen">
+    <div className="max-w-xl mx-auto px-4 flex flex-col gap-6">
 
-          <div className="field-grid w-full">
-            <label className="field w-full">
-              <span>Work duration (minutes)</span>
-              <input
-                type="number"
-                min="1"
-                value={work}
-                onChange={handleNumberChange(setWork)}
-                className="w-full"
-              />
-            </label>
+      {/* Card 1 */}
+      <div className="border border-gray-300 dark:border-gray-700 rounded-xl p-6 bg-white dark:bg-gray-900 shadow-sm w-full flex flex-col gap-4">
+        <h1 className="screen-title">Build Session</h1>
 
-            <label className="field w-full">
-              <span>Break duration (minutes)</span>
-              <input
-                type="number"
-                min="1"
-                value={breakTime}
-                onChange={handleNumberChange(setBreakTime)}
-                className="w-full"
-              />
-            </label>
+        <label className="field">
+          <span>Work duration (minutes)</span>
+          <input
+            type="number"
+            min="1"
+            value={work}
+            onChange={handleNumberChange(setWork)}
+          />
+        </label>
 
-            <label className="field w-full">
-              <span>Long break duration (minutes)</span>
-              <input
-                type="number"
-                min="1"
-                value={longBreakDuration}
-                onChange={handleNumberChange(setLongBreakDuration)}
-                className="w-full"
-              />
-            </label>
+        <label className="field">
+          <span>Break duration (minutes)</span>
+          <input
+            type="number"
+            min="1"
+            value={breakTime}
+            onChange={handleNumberChange(setBreakTime)}
+          />
+        </label>
 
-            <label className="field w-full">
-              <span>Sessions before long break</span>
-              <input
-                type="number"
-                min="1"
-                value={sessionsBeforeLongBreak}
-                onChange={handleNumberChange(setSessionsBeforeLongBreak)}
-                className="w-full"
-              />
-            </label>
-          </div>
+        <label className="field">
+          <span>Long break duration (minutes)</span>
+          <input
+            type="number"
+            min="1"
+            value={longBreakDuration}
+            onChange={handleNumberChange(setLongBreakDuration)}
+          />
+        </label>
 
-          <div className="custom-builder-actions w-full">
-            <button
-              type="button"
-              className="action-button secondary-button w-full"
-              onClick={handleSavePreset}
-            >
-              Save Preset
-            </button>
-          </div>
-        </div>
+        <label className="field">
+          <span>Sessions before long break</span>
+          <input
+            type="number"
+            min="1"
+            value={sessionsBeforeLongBreak}
+            onChange={handleNumberChange(setSessionsBeforeLongBreak)}
+          />
+        </label>
 
-        <div className="bg-white dark:bg-gray-900 rounded-xl shadow-md p-6 flex flex-col w-full space-y-4 items-center justify-center">
-          <h1 className="screen-title w-full text-center">Focus Time</h1>
-          <div className="w-full">
-            <Timer
-              ref={timerControlsRef}
-              key={timerStorageKey}
-              work={work}
-              breakTime={breakTime}
-              longBreakDuration={longBreakDuration}
-              sessionsBeforeLongBreak={sessionsBeforeLongBreak}
-              totalSessions={sessionsBeforeLongBreak}
-              isStarting={isStartingSession}
-              storageKey={timerStorageKey}
-              onStart={handleStart}
-              onComplete={handleComplete}
-              statusMessage={statusMessage}
-              errorMessage={errorMessage}
-              startLabel="Start"
-              repeatCycles
-              adaptiveBreak={adaptiveBreak}
-              buildStartPayload={({
-                work,
-                breakTime,
-                totalSessions,
-                longBreakDuration,
-                sessionsBeforeLongBreak,
-              }) => ({
-                work_duration: Number(work),
-                break_duration: Number(breakTime),
-                total_sessions: Number(totalSessions),
-                long_break_duration: Number(longBreakDuration),
-                sessions_before_long_break: Number(sessionsBeforeLongBreak),
-              })}
-            />
-          </div>
-        </div>
-
-        <div className="bg-white dark:bg-gray-900 rounded-xl shadow-md p-6 flex flex-col w-full space-y-4">
-          <Presets onApplyPreset={handleApplyPreset} refreshKey={presetRefreshKey} />
-        </div>
-
-        <div className="bg-white dark:bg-gray-900 rounded-xl shadow-md p-6 flex flex-col w-full space-y-4">
-          <MusicPlayer />
-        </div>
+        <button
+          type="button"
+          className="action-button secondary-button w-full"
+          onClick={handleSavePreset}
+        >
+          Save Preset
+        </button>
       </div>
-    </section>
-  );
-}
 
+      {/* Card 2 */}
+      <div className="border border-gray-300 dark:border-gray-700 rounded-xl p-6 bg-white dark:bg-gray-900 shadow-sm w-full flex flex-col gap-4">
+        <h2 className="section-title text-center">Focus Time</h2>
+
+        <Timer
+          ref={timerControlsRef}
+          key={timerStorageKey}
+          work={work}
+          breakTime={breakTime}
+          longBreakDuration={longBreakDuration}
+          sessionsBeforeLongBreak={sessionsBeforeLongBreak}
+          totalSessions={sessionsBeforeLongBreak}
+          isStarting={isStartingSession}
+          storageKey={timerStorageKey}
+          onStart={handleStart}
+          onComplete={handleComplete}
+          statusMessage={statusMessage}
+          errorMessage={errorMessage}
+          startLabel="Start"
+          repeatCycles
+          adaptiveBreak={adaptiveBreak}
+          buildStartPayload={({ work, breakTime, totalSessions, longBreakDuration, sessionsBeforeLongBreak }) => ({
+            work_duration: Number(work),
+            break_duration: Number(breakTime),
+            total_sessions: Number(totalSessions),
+            long_break_duration: Number(longBreakDuration),
+            sessions_before_long_break: Number(sessionsBeforeLongBreak),
+          })}
+        />
+      </div>
+
+      {/* Card 3 */}
+      <div className="border border-gray-300 dark:border-gray-700 rounded-xl p-6 bg-white dark:bg-gray-900 shadow-sm w-full flex flex-col gap-4">
+        <h2 className="section-title">Quick Apply</h2>
+        <Presets onApplyPreset={handleApplyPreset} refreshKey={presetRefreshKey} />
+      </div>
+
+    </div>
+  </section>
+);
+}
 export default CustomTimer;

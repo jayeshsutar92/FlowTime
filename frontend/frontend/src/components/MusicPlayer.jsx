@@ -302,7 +302,7 @@ function MusicPlayer() {
   };
 
   return (
-    <section className="card music-player-card">
+    <section className="w-full min-w-0 flex flex-col gap-4">
       <div className="music-player-header">
         <h2 className="section-title">Music Player</h2>
       </div>

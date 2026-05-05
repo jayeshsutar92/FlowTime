@@ -14,7 +14,7 @@ def add_completed_column_if_missing(apps, schema_editor):
 
         if "completed" not in existing_columns:
             schema_editor.execute(
-                "ALTER TABLE focusapp_session ADD COLUMN completed bool NOT NULL DEFAULT 0"
+                "ALTER TABLE focusapp_session ADD COLUMN completed boolean NOT NULL DEFAULT FALSE"
             )
 
 
