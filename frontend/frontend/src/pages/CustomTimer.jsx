@@ -1,40 +1,35 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+
 import Timer from "../components/timer";
 import {
-  savePreset,
+  deletePreset,
   endSession,
+  fetchPresets,
   getApiErrorMessage,
   readDashboardCache,
   refreshDashboardSnapshot,
+  savePreset,
   startSession,
 } from "../api";
-import Presets from "../components/Presets";
 
-const CUSTOM_TIMER_SETTINGS_KEY = "flowtime-custom-settings";
 const CUSTOM_SESSION_ID_KEY = "flowtime-custom-session-id";
+const CUSTOM_TIMER_STORAGE_KEY = "flowtime-custom-timer";
 
-const readSavedSettings = () => {
-  const serializedSettings = window.localStorage.getItem(CUSTOM_TIMER_SETTINGS_KEY);
+const resolvePositiveInt = (value, fallback) => {
+  const resolved = Number(value);
 
-  if (!serializedSettings) {
-    return null;
+  if (Number.isNaN(resolved) || resolved <= 0) {
+    return fallback;
   }
 
-  try {
-    return JSON.parse(serializedSettings);
-  } catch (error) {
-    console.error(error);
-    return null;
-  }
+  return Math.floor(resolved);
 };
 
-const validateSessionPayload = (payload) => {
+const validateStartPayload = (payload) => {
   const normalizedPayload = {
     work_duration: Number(payload.work_duration),
     break_duration: Number(payload.break_duration),
     total_sessions: Number(payload.total_sessions),
-    long_break_duration: Number(payload.long_break_duration),
-    sessions_before_long_break: Number(payload.sessions_before_long_break),
   };
 
   const hasInvalidValue = Object.values(normalizedPayload).some(
@@ -44,7 +39,7 @@ const validateSessionPayload = (payload) => {
   if (hasInvalidValue) {
     return {
       valid: false,
-      message: "Enter valid session values greater than 0.",
+      message: "Invalid session data",
       payload: normalizedPayload,
     };
   }
@@ -55,40 +50,44 @@ const validateSessionPayload = (payload) => {
   };
 };
 
+const buildPresetBaseName = ({ work, breakTime, sessionsBeforeLongBreak, longBreakDuration }) =>
+  `Focus ${work}m | Break ${breakTime}m | ${sessionsBeforeLongBreak} sessions | Long ${longBreakDuration}m`;
+
 function CustomTimer() {
-  const savedSettings = readSavedSettings();
-  const [work, setWork] = useState(() => savedSettings?.work ?? 25);
-  const [breakTime, setBreakTime] = useState(() => savedSettings?.breakTime ?? 5);
-  const [longBreakDuration, setLongBreakDuration] = useState(
-    () => savedSettings?.longBreakDuration ?? 15
-  );
-  const [sessionsBeforeLongBreak, setSessionsBeforeLongBreak] = useState(
-    () => savedSettings?.sessionsBeforeLongBreak ?? 4
-  );
+  const timerRef = useRef(null);
+
+  const [workDuration, setWorkDuration] = useState("25");
+  const [breakDuration, setBreakDuration] = useState("5");
+  const [sessionsBeforeLongBreak, setSessionsBeforeLongBreak] = useState("4");
+  const [longBreakDuration, setLongBreakDuration] = useState("15");
+
   const [sessionId, setSessionId] = useState(() => window.localStorage.getItem(CUSTOM_SESSION_ID_KEY));
   const [statusMessage, setStatusMessage] = useState("");
   const [errorMessage, setErrorMessage] = useState("");
   const [isStartingSession, setIsStartingSession] = useState(false);
-  const [presetRefreshKey, setPresetRefreshKey] = useState(0);
+  const [isSavingPreset, setIsSavingPreset] = useState(false);
+  const [presetsRefreshKey, setPresetsRefreshKey] = useState(0);
+  const [presets, setPresets] = useState([]);
+  const [isLoadingPresets, setIsLoadingPresets] = useState(true);
+  const [presetsErrorMessage, setPresetsErrorMessage] = useState("");
+  const [activePresetId, setActivePresetId] = useState(null);
   const [adaptiveBreak, setAdaptiveBreak] = useState(() => readDashboardCache()?.adaptiveBreak ?? null);
-  const timerStorageKey = `flowtime-custom-timer-${work}-${breakTime}-${longBreakDuration}-${sessionsBeforeLongBreak}`;
-  const timerControlsRef = useRef(null);
+  const [shouldResetTimer, setShouldResetTimer] = useState(false);
 
-  const handleNumberChange = (setter) => (event) => {
-    setter(event.target.value === "" ? "" : Number(event.target.value));
-  };
+  const resolvedConfig = useMemo(() => {
+    const resolvedWork = resolvePositiveInt(workDuration, 25);
+    const resolvedBreak = resolvePositiveInt(breakDuration, 5);
+    const resolvedSessionsBeforeLongBreak = resolvePositiveInt(sessionsBeforeLongBreak, 4);
+    const resolvedLongBreak = resolvePositiveInt(longBreakDuration, 15);
 
-  useEffect(() => {
-    window.localStorage.setItem(
-      CUSTOM_TIMER_SETTINGS_KEY,
-      JSON.stringify({
-        work,
-        breakTime,
-        longBreakDuration,
-        sessionsBeforeLongBreak,
-      })
-    );
-  }, [breakTime, longBreakDuration, sessionsBeforeLongBreak, work]);
+    return {
+      work: resolvedWork,
+      breakTime: resolvedBreak,
+      sessionsBeforeLongBreak: resolvedSessionsBeforeLongBreak,
+      longBreakDuration: resolvedLongBreak,
+      totalSessions: resolvedSessionsBeforeLongBreak,
+    };
+  }, [breakDuration, longBreakDuration, sessionsBeforeLongBreak, workDuration]);
 
   useEffect(() => {
     if (!sessionId) {
@@ -99,13 +98,41 @@ function CustomTimer() {
     window.localStorage.setItem(CUSTOM_SESSION_ID_KEY, String(sessionId));
   }, [sessionId]);
 
+  useEffect(() => {
+    if (!shouldResetTimer) {
+      return;
+    }
+
+    timerRef.current?.reset?.();
+    setShouldResetTimer(false);
+  }, [shouldResetTimer]);
+
+  useEffect(() => {
+    const loadPresets = async () => {
+      setIsLoadingPresets(true);
+      setPresetsErrorMessage("");
+
+      try {
+        const data = await fetchPresets();
+        setPresets(data);
+      } catch (err) {
+        console.error(err);
+        setPresetsErrorMessage("Could not load presets. Make sure the backend server is running.");
+      } finally {
+        setIsLoadingPresets(false);
+      }
+    };
+
+    loadPresets();
+  }, [presetsRefreshKey]);
+
   const handleStart = async (payload) => {
     if (isStartingSession) {
       return false;
     }
 
     setErrorMessage("");
-    const validation = validateSessionPayload(payload);
+    const validation = validateStartPayload(payload);
 
     if (!validation.valid) {
       setStatusMessage("");
@@ -160,151 +187,278 @@ function CustomTimer() {
       }
     } catch (err) {
       console.error(err);
-      setErrorMessage("Session ended locally, but saving completion failed.");
+      setErrorMessage("Session finished, but saving completion failed.");
     }
-  };
-
-  const handleApplyPreset = ({
-    work,
-    breakTime,
-    longBreakDuration = 15,
-    sessionsBeforeLongBreak = 4,
-  }) => {
-    setWork(Number(work));
-    setBreakTime(Number(breakTime));
-    setLongBreakDuration(Number(longBreakDuration));
-    setSessionsBeforeLongBreak(Number(sessionsBeforeLongBreak));
-    setStatusMessage("Preset applied.");
-    setErrorMessage("");
-    setPresetRefreshKey((current) => current + 1);
   };
 
   const handleSavePreset = async () => {
-    const payload = {
-      name: `Preset ${work}-${breakTime}-${longBreakDuration}-${sessionsBeforeLongBreak}`,
-      work_duration: Number(work),
-      short_break: Number(breakTime),
-      long_break_duration: Number(longBreakDuration),
-      sessions_before_long_break: Number(sessionsBeforeLongBreak),
-    };
-
-    if(
-      !payload.work_duration ||
-      !payload.short_break ||
-      !payload.long_break_duration ||
-      !payload.sessions_before_long_break
-    ) {
-      setErrorMessage("Please fill in all fields.");
+    if (isSavingPreset) {
       return;
     }
 
+    setErrorMessage("");
+
+    const resolvedWork = resolvedConfig.work;
+    const resolvedBreak = resolvedConfig.breakTime;
+    const resolvedLongBreak = resolvedConfig.longBreakDuration;
+    const resolvedSessions = resolvedConfig.sessionsBeforeLongBreak;
+
+    if ([resolvedWork, resolvedBreak, resolvedLongBreak, resolvedSessions].some((value) => value <= 0)) {
+      setStatusMessage("");
+      setErrorMessage("Invalid preset data");
+      return;
+    }
+
+    const baseName = buildPresetBaseName({
+      work: resolvedWork,
+      breakTime: resolvedBreak,
+      sessionsBeforeLongBreak: resolvedSessions,
+      longBreakDuration: resolvedLongBreak,
+    });
+
+    setIsSavingPreset(true);
+    setStatusMessage("Saving preset...");
+
     try {
-      await savePreset(payload);
-      setStatusMessage("Preset saved.");
-      setErrorMessage("");
-      setPresetRefreshKey((current) => current + 1);
+      let lastError = null;
+
+      for (let attempt = 0; attempt < 3; attempt += 1) {
+        const name = attempt === 0 ? baseName : `${baseName} (${attempt + 1})`;
+
+        try {
+          await savePreset({
+            name,
+            work_duration: resolvedWork,
+            break_duration: resolvedBreak,
+            long_break_duration: resolvedLongBreak,
+            sessions_before_long_break: resolvedSessions,
+          });
+
+          setStatusMessage("Preset saved.");
+          setPresetsRefreshKey((current) => current + 1);
+          return;
+        } catch (err) {
+          lastError = err;
+          const message = getApiErrorMessage(err, "Could not save preset");
+
+          if (message.toLowerCase().includes("already exists") && attempt < 2) {
+            continue;
+          }
+
+          throw err;
+        }
+      }
+
+      throw lastError;
     } catch (err) {
       console.error(err);
-      setErrorMessage(getApiErrorMessage(err, "Could not save preset."));
+      setStatusMessage("");
+      setErrorMessage(getApiErrorMessage(err, "Could not save preset"));
+    } finally {
+      setIsSavingPreset(false);
     }
   };
 
-return (
-  <section className="screen">
-    <div className="max-w-xl mx-auto px-4 flex flex-col gap-6">
+  const handleStartFromBuilder = async () => {
+    setErrorMessage("");
+    setStatusMessage("");
 
-      {/* Card 1 */}
-      <div className="border border-gray-300 dark:border-gray-700 rounded-xl p-6 bg-white dark:bg-gray-900 shadow-sm w-full flex flex-col gap-4">
-        <h1 className="screen-title">Build Session</h1>
+    timerRef.current?.reset?.();
+    await timerRef.current?.start?.();
+  };
 
-        <label className="field">
-          <span>Work duration (minutes)</span>
-          <input
-            type="number"
-            min="1"
-            value={work}
-            onChange={handleNumberChange(setWork)}
-          />
-        </label>
+  const handleApplyPreset = (preset) => {
+    setWorkDuration(String(resolvePositiveInt(preset.work, 25)));
+    setBreakDuration(String(resolvePositiveInt(preset.breakTime, 5)));
+    setSessionsBeforeLongBreak(String(resolvePositiveInt(preset.sessionsBeforeLongBreak, 4)));
+    setLongBreakDuration(String(resolvePositiveInt(preset.longBreakDuration, 15)));
 
-        <label className="field">
-          <span>Break duration (minutes)</span>
-          <input
-            type="number"
-            min="1"
-            value={breakTime}
-            onChange={handleNumberChange(setBreakTime)}
-          />
-        </label>
+    setShouldResetTimer(true);
+  };
 
-        <label className="field">
-          <span>Long break duration (minutes)</span>
-          <input
-            type="number"
-            min="1"
-            value={longBreakDuration}
-            onChange={handleNumberChange(setLongBreakDuration)}
-          />
-        </label>
+  return (
+    <section className="screen">
+      <div className="card builder-card">
+        <h1 className="screen-title">Build your session</h1>
 
-        <label className="field">
-          <span>Sessions before long break</span>
-          <input
-            type="number"
-            min="1"
-            value={sessionsBeforeLongBreak}
-            onChange={handleNumberChange(setSessionsBeforeLongBreak)}
-          />
-        </label>
+        <div className="field-grid">
+          <label className="field">
+            <span>Work duration</span>
+            <input
+              type="number"
+              inputMode="numeric"
+              min="1"
+              step="1"
+              value={workDuration}
+              onChange={(event) => setWorkDuration(event.target.value)}
+              disabled={isStartingSession}
+            />
+          </label>
 
-        <button
-          type="button"
-          className="action-button secondary-button w-full"
-          onClick={handleSavePreset}
-        >
-          Save Preset
-        </button>
+          <label className="field">
+            <span>Break duration</span>
+            <input
+              type="number"
+              inputMode="numeric"
+              min="1"
+              step="1"
+              value={breakDuration}
+              onChange={(event) => setBreakDuration(event.target.value)}
+              disabled={isStartingSession}
+            />
+          </label>
+
+          <label className="field">
+            <span>Sessions before long break</span>
+            <input
+              type="number"
+              inputMode="numeric"
+              min="1"
+              step="1"
+              value={sessionsBeforeLongBreak}
+              onChange={(event) => setSessionsBeforeLongBreak(event.target.value)}
+              disabled={isStartingSession}
+            />
+          </label>
+
+          <label className="field">
+            <span>Long break duration</span>
+            <input
+              type="number"
+              inputMode="numeric"
+              min="1"
+              step="1"
+              value={longBreakDuration}
+              onChange={(event) => setLongBreakDuration(event.target.value)}
+              disabled={isStartingSession}
+            />
+          </label>
+        </div>
+
+        <div className="action-stack">
+          <button
+            type="button"
+            className="action-button secondary-button"
+            onClick={handleSavePreset}
+            disabled={isSavingPreset}
+          >
+            {isSavingPreset ? "Saving..." : "Save Session / Save Preset"}
+          </button>
+
+          <button
+            type="button"
+            className="action-button primary-button"
+            onClick={() => void handleStartFromBuilder()}
+            disabled={isStartingSession}
+          >
+            Start Session
+          </button>
+        </div>
       </div>
 
-      {/* Card 2 */}
-      <div className="border border-gray-300 dark:border-gray-700 rounded-xl p-6 bg-white dark:bg-gray-900 shadow-sm w-full flex flex-col gap-4">
-        <h2 className="section-title text-center">Focus Time</h2>
-
+      <div className="card timer-screen-card">
+        <h2 className="screen-title">Focus Time</h2>
         <Timer
-          ref={timerControlsRef}
-          key={timerStorageKey}
-          work={work}
-          breakTime={breakTime}
-          longBreakDuration={longBreakDuration}
-          sessionsBeforeLongBreak={sessionsBeforeLongBreak}
-          totalSessions={sessionsBeforeLongBreak}
+          ref={timerRef}
+          key={CUSTOM_TIMER_STORAGE_KEY}
+          work={resolvedConfig.work}
+          breakTime={resolvedConfig.breakTime}
+          longBreakDuration={resolvedConfig.longBreakDuration}
+          sessionsBeforeLongBreak={resolvedConfig.sessionsBeforeLongBreak}
+          totalSessions={resolvedConfig.totalSessions}
           isStarting={isStartingSession}
-          storageKey={timerStorageKey}
+          storageKey={CUSTOM_TIMER_STORAGE_KEY}
           onStart={handleStart}
           onComplete={handleComplete}
           statusMessage={statusMessage}
           errorMessage={errorMessage}
-          startLabel="Start"
-          repeatCycles
+          startLabel="Start Session"
           adaptiveBreak={adaptiveBreak}
-          buildStartPayload={({ work, breakTime, totalSessions, longBreakDuration, sessionsBeforeLongBreak }) => ({
-            work_duration: Number(work),
-            break_duration: Number(breakTime),
-            total_sessions: Number(totalSessions),
-            long_break_duration: Number(longBreakDuration),
-            sessions_before_long_break: Number(sessionsBeforeLongBreak),
-          })}
         />
       </div>
 
-      {/* Card 3 */}
-      <div className="border border-gray-300 dark:border-gray-700 rounded-xl p-6 bg-white dark:bg-gray-900 shadow-sm w-full flex flex-col gap-4">
-        <h2 className="section-title">Quick Apply</h2>
-        <Presets onApplyPreset={handleApplyPreset} refreshKey={presetRefreshKey} />
-      </div>
+      <div className="card presets-card">
+        <div className="field-grid">
+          <h2 className="section-title">Quick Apply</h2>
 
-    </div>
-  </section>
-);
+          {isLoadingPresets ? <p className="feedback-message">Loading presets...</p> : null}
+          {presetsErrorMessage ? (
+            <p className="feedback-message error-message" role="alert">
+              {presetsErrorMessage}
+            </p>
+          ) : null}
+          {!isLoadingPresets && !presetsErrorMessage && presets.length === 0 ? (
+            <p className="feedback-message">No presets saved yet.</p>
+          ) : null}
+
+          <div className="field-grid">
+            {presets.map((preset) => {
+              const resolvedLongBreak = Number(
+                preset.long_break_duration ?? preset.long_break ?? preset.longBreakDuration ?? 15
+              );
+              const resolvedSessions = Number(
+                preset.sessions_before_long_break ??
+                  preset.sessionsBeforeLongBreak ??
+                  preset.total_sessions ??
+                  4
+              );
+
+              return (
+                <article key={preset.id} className="score-panel">
+                  <div>
+                    <p className="section-title">{preset.name}</p>
+                    <p className="score-caption">
+                      {preset.work_duration} min focus | {preset.short_break ?? preset.break_duration} min break | {resolvedLongBreak} min long break
+                    </p>
+                  </div>
+
+                  <div className="action-stack">
+                    <button
+                      type="button"
+                      className="action-button secondary-button"
+                      onClick={() =>
+                        handleApplyPreset({
+                          work: Number(preset.work_duration),
+                          breakTime: Number(preset.short_break ?? preset.break_duration),
+                          longBreakDuration: resolvedLongBreak,
+                          sessionsBeforeLongBreak: resolvedSessions,
+                        })
+                      }
+                    >
+                      Use
+                    </button>
+                    <button
+                      type="button"
+                      className="action-button secondary-button"
+                      onClick={async () => {
+                        setActivePresetId(preset.id);
+                        setPresetsErrorMessage("");
+
+                        try {
+                          await deletePreset(preset.id);
+                          setPresets((currentPresets) =>
+                            currentPresets.filter((item) => item.id !== preset.id)
+                          );
+                        } catch (err) {
+                          console.error(err);
+                          setPresetsErrorMessage("Could not delete preset.");
+                        } finally {
+                          setActivePresetId(null);
+                        }
+                      }}
+                      disabled={activePresetId === preset.id}
+                    >
+                      {activePresetId === preset.id ? "Deleting..." : "Delete"}
+                    </button>
+                  </div>
+                </article>
+              );
+            })}
+          </div>
+        </div>
+      </div>
+    </section>
+  );
 }
+
 export default CustomTimer;
