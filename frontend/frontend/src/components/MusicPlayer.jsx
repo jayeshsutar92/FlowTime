@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
+  API_ORIGIN,
   enqueueMusicTrack,
   fetchMusicQueue,
   fetchMusicTracks,
@@ -10,7 +11,7 @@ import {
 import QueueList from "./QueueList";
 import TrackList from "./TrackList";
 
-const MEDIA_BASE_URL = "http://127.0.0.1:8000";
+const MEDIA_BASE_URL = API_ORIGIN;
 
 const resolveTrackSource = (track, localSources) => {
   if (!track) {

@@ -1,7 +1,13 @@
 import axios from "axios";
 
+const RAW_API_URL = import.meta.env.VITE_API_URL?.trim() || "https://flowtime-backend-kzel.onrender.com";
+export const API_ORIGIN = RAW_API_URL.replace(/\/+$/, "");
+const API_BASE_URL = API_ORIGIN.endsWith("/api")
+  ? `${API_ORIGIN}/`
+  : `${API_ORIGIN}/api/`;
+
 const apiClient = axios.create({
-  baseURL: "http://127.0.0.1:8000/api/",
+  baseURL: API_BASE_URL,
   headers: {
     "Content-Type": "application/json",
   },
