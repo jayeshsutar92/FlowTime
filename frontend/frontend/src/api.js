@@ -1,6 +1,6 @@
 import axios from "axios";
 
-const RAW_API_URL = import.meta.env.VITE_API_URL?.trim() || "https://flowtime-backend-kzel.onrender.com";
+const RAW_API_URL = import.meta.env.VITE_API_URL?.trim();
 export const API_ORIGIN = RAW_API_URL.replace(/\/+$/, "");
 const API_BASE_URL = API_ORIGIN.endsWith("/api")
   ? `${API_ORIGIN}/`
