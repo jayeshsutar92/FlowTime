@@ -119,6 +119,28 @@ cd FlowTime
 
 ---
 
+## Docker (Recommended)
+
+Run both frontend and backend (with PostgreSQL) using Docker Compose:
+
+```bash
+docker compose up --build
+```
+
+Services:
+
+* Backend: http://localhost:8000
+* Frontend: http://localhost:5173
+* PostgreSQL: localhost:5433 (internal Docker port 5432)
+
+Stop containers:
+
+```bash
+docker compose down
+```
+
+---
+
 ## Backend Setup
 
 ### Windows
