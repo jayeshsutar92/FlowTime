@@ -1,0 +1,45 @@
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      - POSTGRES_DB=flowtime
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres
+    ports:
+      - "5433:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+  backend:
+    build:
+      context: ./backend/backend
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./backend/backend:/app
+    environment:
+      - DJANGO_SETTINGS_MODULE=config.settings
+      - PYTHONDONTWRITEBYTECODE=1
+      - PYTHONUNBUFFERED=1
+      - DATABASE_URL=postgres://postgres:postgres@db:5432/flowtime
+    command: python manage.py runserver 0.0.0.0:8000
+    depends_on:
+      - db
+
+  frontend:
+    build:
+      context: ./frontend/frontend
+    ports:
+      - "5173:5173"
+    volumes:
+      - ./frontend/frontend:/app
+      - /app/node_modules
+    environment:
+      - CHOKIDAR_USEPOLLING=true
+      - WATCHPACK_POLLING=true
+    command: npm run dev -- --host 0.0.0.0 --port 5173
+    depends_on:
+      - backend
+
+volumes:
+  postgres_data:
