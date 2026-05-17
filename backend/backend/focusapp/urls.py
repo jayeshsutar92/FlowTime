@@ -2,12 +2,14 @@ from django.urls import path
 from . import views
 
 urlpatterns = [
+    path('csrf/', views.csrf_cookie),
     path('signup/', views.signup),
     path('login/', views.login_user),
     path('forgot-password/', views.forgot_password),
     path('reset-password/', views.reset_password),
     path('start-session/', views.start_session),
     path('pause-session/', views.pause_session),
+    path('resume-session/', views.resume_session),
     path('end-session/', views.end_session),
     path('sessions/', views.get_sessions),
     path('stats/', views.get_stats),

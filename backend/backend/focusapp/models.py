@@ -17,6 +17,8 @@ class Session(models.Model):
     completed = models.BooleanField(default=False)
     total_sessions = models.IntegerField(default=1)
     current_session = models.IntegerField(default=1)
+    paused_seconds = models.IntegerField(default=0)
+    paused_at = models.DateTimeField(null=True, blank=True)
     status = models.CharField(
         max_length=20,
         choices=STATUS_CHOICES,

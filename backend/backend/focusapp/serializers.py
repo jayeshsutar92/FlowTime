@@ -109,6 +109,9 @@ class StartSessionResponseSerializer(serializers.Serializer):
     total_sessions = serializers.IntegerField(min_value=1)
     current_session = serializers.IntegerField(min_value=1)
     status = serializers.ChoiceField(choices=[Session.STATUS_RUNNING])
+    work_duration = serializers.IntegerField(min_value=1)
+    started_at = serializers.DateTimeField()
+    paused_seconds = serializers.IntegerField(min_value=0)
     short_break = serializers.IntegerField(min_value=0)
     break_type = serializers.ChoiceField(choices=["short", "long"])
     break_duration = serializers.IntegerField(min_value=0)
@@ -131,6 +134,8 @@ class SessionSerializer(serializers.ModelSerializer):
             "completed",
             "total_sessions",
             "current_session",
+            "paused_seconds",
+            "paused_at",
             "status",
             "created_at",
         ]

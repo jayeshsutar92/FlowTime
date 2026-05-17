@@ -6,3 +6,7 @@ __pycache__/
 venv/
 .env
 *.sqlite3
+.env.*
+.git
+.gitignore
+staticfiles

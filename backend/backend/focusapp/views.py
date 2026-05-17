@@ -10,6 +10,7 @@ from django.db.models import Avg, Count, Sum
 from django.db.models.functions import ExtractHour, TruncDate
 from django.conf import settings
 from django.utils import timezone
+from django.views.decorators.csrf import ensure_csrf_cookie
 from rest_framework import status
 from rest_framework.decorators import api_view
 from rest_framework.response import Response
@@ -30,6 +31,12 @@ from .serializers import (
 
 logger = logging.getLogger(__name__)
 User = get_user_model()
+
+
+@ensure_csrf_cookie
+@api_view(["GET"])
+def csrf_cookie(request):
+    return success_response("CSRF cookie set", None)
 
 
 def success_response(message, data=None, status_code=status.HTTP_200_OK, **extra):
@@ -273,7 +280,7 @@ def create_reset_otp(user):
         logger.info("Sent reset OTP email to user_id=%s", user.id)
     else:
         logger.info("Reset OTP for user_id=%s is %s", user.id, otp)
-    return otp_record
+    return otp
 
 
 @api_view(["POST"])
@@ -347,10 +354,15 @@ def forgot_password(request):
         )
 
     user = get_user_by_identifier(serializer.validated_data["identifier"])
+    otp_value = None
     if user is not None:
-        create_reset_otp(user)
+        otp_value = create_reset_otp(user)
 
-    return success_response("If account exists, OTP sent", None)
+    extra = {}
+    if settings.DEBUG and otp_value:
+        extra["otp"] = otp_value
+
+    return success_response("If account exists, OTP sent", None, **extra)
 
 
 @api_view(["POST"])
@@ -534,6 +546,9 @@ def start_session(request):
         "total_sessions": session.total_sessions,
         "current_session": session.current_session,
         "status": session.status,
+        "work_duration": session.work_duration,
+        "started_at": session.created_at.isoformat(),
+        "paused_seconds": session.paused_seconds,
         "short_break": short_break,
         "break_type": break_type,
         "break_duration": break_duration,
@@ -587,10 +602,55 @@ def pause_session(request):
             status.HTTP_400_BAD_REQUEST,
         )
 
-    session.transition_to(Session.STATUS_PAUSED)
+    session.status = Session.STATUS_PAUSED
+    session.paused_at = timezone.now()
+    session.save(update_fields=["status", "paused_at", "completed"])
     return success_response(
         "Session paused",
-        {"session_id": session.id, "status": session.status},
+        {
+            "session_id": session.id,
+            "status": session.status,
+            "paused_at": session.paused_at.isoformat() if session.paused_at else None,
+            "paused_seconds": session.paused_seconds,
+        },
+    )
+
+
+@api_view(["POST"])
+def resume_session(request):
+    serializer = SessionTransitionSerializer(data=request.data)
+    if not serializer.is_valid():
+        if "session_id" in serializer.errors:
+            return error_response("session_id is required.", status.HTTP_400_BAD_REQUEST)
+        return error_response(
+            "Invalid resume session payload.",
+            status.HTTP_400_BAD_REQUEST,
+            serializer.errors,
+        )
+
+    session = get_session_or_404(serializer.validated_data["session_id"])
+    if session is None:
+        return error_response("Session not Found", status.HTTP_404_NOT_FOUND)
+    if session.status != Session.STATUS_PAUSED:
+        return error_response(
+            "Only paused sessions can be resumed.",
+            status.HTTP_400_BAD_REQUEST,
+        )
+
+    paused_at = session.paused_at or timezone.now()
+    paused_delta = int((timezone.now() - paused_at).total_seconds())
+    session.paused_seconds += max(0, paused_delta)
+    session.paused_at = None
+    session.status = Session.STATUS_RUNNING
+    session.save(update_fields=["status", "paused_at", "paused_seconds", "completed"])
+
+    return success_response(
+        "Session resumed",
+        {
+            "session_id": session.id,
+            "status": session.status,
+            "paused_seconds": session.paused_seconds,
+        },
     )
 
 
@@ -773,10 +833,9 @@ def presets_collection(request):
     )
 
 
-@api_view(["DELETE"])
-def delete_preset(request, id):
+def delete_preset_record(preset_id):
     try:
-        preset = Preset.objects.get(id=id)
+        preset = Preset.objects.get(id=preset_id)
     except Preset.DoesNotExist:
         return simple_error_response(
             "Preset not found",
@@ -788,8 +847,13 @@ def delete_preset(request, id):
 
 
 @api_view(["DELETE"])
+def delete_preset(request, id):
+    return delete_preset_record(id)
+
+
+@api_view(["DELETE"])
 def delete_preset_by_id(request, id):
-    return delete_preset(request, id)
+    return delete_preset_record(id)
 
 
 def parse_optional_int(value, field_name):

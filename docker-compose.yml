@@ -2,44 +2,41 @@ services:
   db:
     image: postgres:16-alpine
     environment:
-      - POSTGRES_DB=flowtime
-      - POSTGRES_USER=postgres
-      - POSTGRES_PASSWORD=postgres
-    ports:
-      - "5433:5432"
+      POSTGRES_DB: flowtime
+      POSTGRES_USER: flowtime
+      POSTGRES_PASSWORD: flowtime
     volumes:
       - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U flowtime -d flowtime"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 5s
 
   backend:
     build:
       context: ./backend/backend
+    environment:
+      DATABASE_URL: postgres://flowtime:flowtime@db:5432/flowtime
+      DJANGO_SETTINGS_MODULE: config.settings
+    depends_on:
+      db:
+        condition: service_healthy
     ports:
       - "8000:8000"
-    volumes:
-      - ./backend/backend:/app
-    environment:
-      - DJANGO_SETTINGS_MODULE=config.settings
-      - PYTHONDONTWRITEBYTECODE=1
-      - PYTHONUNBUFFERED=1
-      - DATABASE_URL=postgres://postgres:postgres@db:5432/flowtime
-    command: python manage.py runserver 0.0.0.0:8000
-    depends_on:
-      - db
 
   frontend:
     build:
-      context: ./frontend/frontend
-    ports:
-      - "5173:5173"
-    volumes:
-      - ./frontend/frontend:/app
-      - /app/node_modules
-    environment:
-      - CHOKIDAR_USEPOLLING=true
-      - WATCHPACK_POLLING=true
-    command: npm run dev -- --host 0.0.0.0 --port 5173
+      context: ./frontend
+      args:
+        VITE_API_URL: /api
     depends_on:
       - backend
+    ports:
+      - "3000:80"
 
 volumes:
   postgres_data:

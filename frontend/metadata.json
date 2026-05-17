@@ -1,0 +1,8 @@
+{
+  "name": "FlowTime",
+  "description": "A modern React frontend for the FlowTime deep-work productivity platform.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}

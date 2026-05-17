@@ -130,7 +130,7 @@ docker compose up --build
 Services:
 
 * Backend: http://localhost:8000
-* Frontend: http://localhost:5173
+* Frontend: http://localhost:3000
 * PostgreSQL: localhost:5433 (internal Docker port 5432)
 
 Stop containers:
@@ -185,7 +185,7 @@ Backend runs on:
 http://127.0.0.1:8000
 
 Frontend runs on:
-http://localhost:5173
+http://localhost:3000
 
 ---
 
