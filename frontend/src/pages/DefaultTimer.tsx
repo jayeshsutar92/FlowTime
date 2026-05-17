@@ -97,18 +97,20 @@ export default function Timer() {
           pausedAtMs
         );
 
-        setSessionId(activeSession.id);
-        setSessionState("work");
-        setWorkDuration(activeSession.work_duration);
-        setBreakDuration(activeSession.break_duration || 5);
-        setTotalSessions(activeSession.total_sessions);
-        setCurrentSession(activeSession.current_session);
-        setSessionStartAt(startAtMs);
-        setPausedSeconds(pausedSecondsValue);
-        setIsActive(activeSession.status === "running");
-        setTimeLeft(remaining);
-        clearBreakState();
-        return;
+        if (Number.isFinite(startAtMs) && durationSeconds > 0 && remaining > 0) {
+          setSessionId(activeSession.id);
+          setSessionState("work");
+          setWorkDuration(activeSession.work_duration);
+          setBreakDuration(activeSession.break_duration || 5);
+          setTotalSessions(activeSession.total_sessions);
+          setCurrentSession(activeSession.current_session);
+          setSessionStartAt(startAtMs);
+          setPausedSeconds(pausedSecondsValue);
+          setIsActive(activeSession.status === "running");
+          setTimeLeft(remaining);
+          clearBreakState();
+          return;
+        }
       }
 
       const breakState = loadBreakState();

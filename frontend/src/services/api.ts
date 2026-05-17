@@ -44,7 +44,10 @@ export const ensureCsrfCookie = async () => {
     csrfInitPromise = csrfClient
       .get("/csrf/")
       .then(() => undefined)
-      .catch(() => undefined);
+      .catch((error) => {
+        csrfInitPromise = null;
+        throw error;
+      });
   }
   return csrfInitPromise;
 };
@@ -87,7 +90,16 @@ api.interceptors.response.use(
   (response) => response,
   (error) => {
     const status = error?.response?.status;
-    if (status === 401 || status === 403) {
+    const responseText = JSON.stringify(error?.response?.data ?? "").toLowerCase();
+    const isAuthFailure =
+      status === 401 ||
+      (status === 403 &&
+        !responseText.includes("csrf") &&
+        (responseText.includes("authentication") ||
+          responseText.includes("credentials") ||
+          responseText.includes("not authenticated")));
+
+    if (isAuthFailure) {
       localStorage.removeItem("flowtime_token");
       window.dispatchEvent(new Event("flowtime:logout"));
     }
