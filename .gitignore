@@ -1,17 +1,19 @@
 # Python
 __pycache__/
 *.pyc
-db.sqlite3
+*.pyo
 *.sqlite3
+db.sqlite3
 venv/
 .venv/
 
 # Node
 node_modules/
 dist/
-npm-debug.log*
+.vite/
+.vite-temp/
 
-# Env
+# Environment
 .env
 .env.*
 !.env.example

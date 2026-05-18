@@ -17,7 +17,7 @@ const normalizeApiBaseUrl = (value: string) => {
 };
 
 const defaultApiUrl = import.meta.env.PROD ? PRODUCTION_API_ORIGIN : "/api";
-const configuredApiUrl = import.meta.env.PROD ? undefined : import.meta.env.VITE_API_URL;
+const configuredApiUrl = import.meta.env.VITE_API_URL;
 const apiUrl = configuredApiUrl || defaultApiUrl;
 
 export const API_BASE_URL = normalizeApiBaseUrl(apiUrl);
@@ -38,6 +38,13 @@ const csrfClient = axios.create({
 });
 
 let csrfInitPromise: Promise<void> | null = null;
+
+export const resetCsrfState = () => {
+  csrfInitPromise = null;
+  if (typeof document !== "undefined") {
+    document.cookie = "csrftoken=; Max-Age=0; path=/";
+  }
+};
 
 export const ensureCsrfCookie = async () => {
   if (!csrfInitPromise) {

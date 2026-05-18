@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, useEffect } from "react";
-import api from "../services/api";
+import api, { resetCsrfState } from "../services/api";
 
 interface AuthContextType {
   token: string | null;
@@ -20,6 +20,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const logout = () => {
     localStorage.removeItem("flowtime_token");
+    resetCsrfState();
     setToken(null);
   };
 

@@ -125,16 +125,36 @@ export default function Auth() {
   };
 
   const handleError = (err: any) => {
-    if (err.response?.data?.error) {
-      setError(err.response.data.error);
-    } else if (err.response?.data?.data) {
-      const msgs = Object.values(err.response.data.data).flat();
-      setError(msgs.join(" "));
-    } else if (err.response?.data?.message) {
-      setError(err.response.data.message);
-    } else {
-      setError("An error occurred. Please try again.");
+    const data = err?.response?.data;
+    if (data?.error) {
+      setError(data.error);
+      return;
     }
+    if (data?.detail) {
+      setError(data.detail);
+      return;
+    }
+    if (data?.details) {
+      if (typeof data.details === "string") {
+        setError(data.details);
+      } else if (Array.isArray(data.details)) {
+        setError(data.details.join(" "));
+      } else {
+        const msgs = Object.values(data.details).flat();
+        setError(msgs.join(" "));
+      }
+      return;
+    }
+    if (data?.data) {
+      const msgs = Object.values(data.data).flat();
+      setError(msgs.join(" "));
+      return;
+    }
+    if (data?.message) {
+      setError(data.message);
+      return;
+    }
+    setError("An error occurred. Please try again.");
   };
 
   return (
