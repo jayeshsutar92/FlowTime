@@ -154,6 +154,10 @@ export default function Auth() {
       setError(data.message);
       return;
     }
+    if (err?.message) {
+      setError(err.message);
+      return;
+    }
     setError("An error occurred. Please try again.");
   };
 

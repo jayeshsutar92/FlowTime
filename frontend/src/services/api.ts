@@ -1,8 +1,6 @@
 /// <reference types="vite/client" />
 import axios from "axios";
 
-const PRODUCTION_API_ORIGIN = "https://flowtime-backend-kzel.onrender.com";
-
 const normalizeApiBaseUrl = (value: string) => {
   const apiUrl = value.trim() || "/api";
 
@@ -16,8 +14,8 @@ const normalizeApiBaseUrl = (value: string) => {
   return path || "/api";
 };
 
-const defaultApiUrl = import.meta.env.PROD ? PRODUCTION_API_ORIGIN : "/api";
-const configuredApiUrl = import.meta.env.VITE_API_URL;
+const defaultApiUrl = "/api";
+const configuredApiUrl = import.meta.env.PROD ? undefined : import.meta.env.VITE_API_URL;
 const apiUrl = configuredApiUrl || defaultApiUrl;
 
 export const API_BASE_URL = normalizeApiBaseUrl(apiUrl);
