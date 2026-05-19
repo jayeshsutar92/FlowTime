@@ -47,10 +47,18 @@ export const resetCsrfState = () => {
 };
 
 export const ensureCsrfCookie = async () => {
+  if (getCookie("csrftoken")) {
+    return Promise.resolve();
+  }
+
   if (!csrfInitPromise) {
     csrfInitPromise = csrfClient
       .get("/csrf/")
-      .then(() => undefined)
+      .then(() => {
+        if (!getCookie("csrftoken")) {
+          throw new Error("CSRF cookie missing after refresh");
+        }
+      })
       .catch((error) => {
         csrfInitPromise = null;
         throw error;
@@ -98,6 +106,8 @@ api.interceptors.response.use(
   (error) => {
     const status = error?.response?.status;
     const responseText = JSON.stringify(error?.response?.data ?? "").toLowerCase();
+    const isCsrfFailure =
+      status === 403 && responseText.includes("csrf");
     const isAuthFailure =
       status === 401 ||
       (status === 403 &&
@@ -109,6 +119,9 @@ api.interceptors.response.use(
     if (isAuthFailure) {
       localStorage.removeItem("flowtime_token");
       window.dispatchEvent(new Event("flowtime:logout"));
+    }
+    if (isCsrfFailure) {
+      resetCsrfState();
     }
     return Promise.reject(error);
   }
