@@ -5,6 +5,22 @@ import { useAuth } from "../contexts/AuthContext";
 
 type AuthView = "login" | "signup" | "forgot_password" | "reset_password" | "otp_login";
 
+const stringifyErrorValue = (value: unknown): string => {
+  if (typeof value === "string") return value;
+  if (typeof value === "number" || typeof value === "boolean") return String(value);
+  if (Array.isArray(value)) {
+    return value.map(stringifyErrorValue).filter(Boolean).join(" ");
+  }
+  if (value && typeof value === "object") {
+    const objectValue = value as Record<string, unknown>;
+    if (typeof objectValue.message === "string") return objectValue.message;
+    if (typeof objectValue.detail === "string") return objectValue.detail;
+    if (typeof objectValue.code === "string") return objectValue.code;
+    return Object.values(objectValue).map(stringifyErrorValue).filter(Boolean).join(" ");
+  }
+  return "";
+};
+
 export default function Auth() {
   const [view, setView] = useState<AuthView>("login");
   const [identifier, setIdentifier] = useState("");
@@ -127,31 +143,23 @@ export default function Auth() {
   const handleError = (err: any) => {
     const data = err?.response?.data;
     if (data?.error) {
-      setError(data.error);
+      setError(stringifyErrorValue(data.error));
       return;
     }
     if (data?.detail) {
-      setError(data.detail);
+      setError(stringifyErrorValue(data.detail));
       return;
     }
     if (data?.details) {
-      if (typeof data.details === "string") {
-        setError(data.details);
-      } else if (Array.isArray(data.details)) {
-        setError(data.details.join(" "));
-      } else {
-        const msgs = Object.values(data.details).flat();
-        setError(msgs.join(" "));
-      }
+      setError(stringifyErrorValue(data.details));
       return;
     }
     if (data?.data) {
-      const msgs = Object.values(data.data).flat();
-      setError(msgs.join(" "));
+      setError(stringifyErrorValue(data.data));
       return;
     }
     if (data?.message) {
-      setError(data.message);
+      setError(stringifyErrorValue(data.message));
       return;
     }
     if (err?.message) {

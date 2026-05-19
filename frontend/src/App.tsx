@@ -15,6 +15,7 @@ import Dashboard from "./pages/Dashboard";
 import Presets from "./pages/Presets";
 import Music from "./pages/Music";
 import TopNav from "./components/TopNav";
+import RouteErrorBoundary from "./components/RouteErrorBoundary";
 
 const ProtectedRoute = ({ children }: { children: React.ReactNode }) => {
   const { isAuthenticated } = useAuth();
@@ -40,15 +41,17 @@ export default function App() {
                   
                   <div className="relative z-10 flex flex-col min-h-screen">
                     <TopNav />
-                    <Routes>
-                      <Route path="/timer" element={<TimerSelection />} />
-                      <Route path="/timer/default" element={<DefaultTimer />} />
-                      <Route path="/timer/custom" element={<CustomTimer />} />
-                      <Route path="/dashboard" element={<Dashboard />} />
-                      <Route path="/presets" element={<Presets />} />
-                      <Route path="/music" element={<Music />} />
-                      <Route path="*" element={<Navigate to="/timer" />} />
-                    </Routes>
+                    <RouteErrorBoundary>
+                      <Routes>
+                        <Route path="/timer" element={<TimerSelection />} />
+                        <Route path="/timer/default" element={<DefaultTimer />} />
+                        <Route path="/timer/custom" element={<CustomTimer />} />
+                        <Route path="/dashboard" element={<Dashboard />} />
+                        <Route path="/presets" element={<Presets />} />
+                        <Route path="/music" element={<Music />} />
+                        <Route path="*" element={<Navigate to="/timer" />} />
+                      </Routes>
+                    </RouteErrorBoundary>
                   </div>
                 </div>
               </ProtectedRoute>
