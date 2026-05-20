@@ -49,6 +49,8 @@ const api = axios.create({
 const csrfClient = axios.create({
   baseURL: API_BASE_URL,
   withCredentials: true,
+  xsrfCookieName: "csrftoken",
+  xsrfHeaderName: "X-CSRFToken",
 });
 
 let csrfInitPromise: Promise<void> | null = null;
@@ -68,11 +70,7 @@ export const ensureCsrfCookie = async () => {
   if (!csrfInitPromise) {
     csrfInitPromise = csrfClient
       .get("/csrf/")
-      .then(() => {
-        if (!getCookie("csrftoken")) {
-          throw new Error("CSRF cookie missing after refresh");
-        }
-      })
+      .then(() => undefined)
       .catch((error) => {
         csrfInitPromise = null;
         throw error;
