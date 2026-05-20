@@ -1,5 +1,5 @@
 /// <reference types="vite/client" />
-import axios, { AxiosHeaders } from "axios";
+import axios from "axios";
 
 const normalizeApiBaseUrl = (value: string) => {
   const apiUrl = value.trim();
@@ -124,7 +124,7 @@ api.interceptors.request.use(async (config) => {
     await ensureCsrfCookie();
     const csrfToken = getCookie("csrftoken");
     if (csrfToken) {
-      config.headers = config.headers || new AxiosHeaders();
+      config.headers = config.headers || {};
       config.headers["X-CSRFToken"] = csrfToken;
     }
   }
