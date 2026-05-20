@@ -55,51 +55,16 @@ const csrfClient = axios.create({
   xsrfHeaderName: "X-CSRFToken",
 });
 
-let csrfInitPromise: Promise<void> | null = null;
-const AUTH_CSRF_PATHS = [
-  "/signup/",
-  "/login/",
-  "/forgot-password/",
-  "/reset-password/",
-];
-
-const isAuthCsrfPath = (url?: string) => {
-  if (!url) return false;
-  return AUTH_CSRF_PATHS.some((path) => url.endsWith(path) || url.includes(path));
-};
-
 export const resetCsrfState = () => {
-  csrfInitPromise = null;
   if (typeof document !== "undefined") {
     document.cookie = "csrftoken=; Max-Age=0; path=/";
   }
 };
 
-export const ensureCsrfCookie = async ({ force = false } = {}) => {
-  if (!force && getCookie("csrftoken")) {
-    return Promise.resolve();
-  }
-
-  if (!csrfInitPromise) {
-    csrfInitPromise = csrfClient
-      .get("/csrf/")
-      .then(async () => {
-        await waitForReadableCookie("csrftoken");
-      })
-      .catch((error) => {
-        csrfInitPromise = null;
-        throw error;
-      });
-  }
-  return csrfInitPromise;
-};
-
-export const ensureFreshCsrfCookie = () => ensureCsrfCookie({ force: true });
-
-const waitForReadableCookie = async (name: string) => {
-  for (let i = 0; i < 5; i += 1) {
-    if (getCookie(name)) return;
-    await new Promise((resolve) => window.setTimeout(resolve, 25));
+export const ensureCsrfCookie = async () => {
+  await csrfClient.get("/csrf/");
+  if (!getCookie("csrftoken")) {
+    throw new Error("CSRF cookie missing after refresh");
   }
 };
 
@@ -158,11 +123,6 @@ api.interceptors.response.use(
     }
     if (isCsrfFailure) {
       resetCsrfState();
-      const originalRequest = error?.config;
-      if (originalRequest && isAuthCsrfPath(originalRequest.url) && !originalRequest._csrfRetried) {
-        originalRequest._csrfRetried = true;
-        return ensureFreshCsrfCookie().then(() => api.request(originalRequest));
-      }
     }
     return Promise.reject(error);
   }
