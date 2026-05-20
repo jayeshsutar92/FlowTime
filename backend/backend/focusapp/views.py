@@ -12,6 +12,7 @@ from django.db.models import Avg, Count, Sum
 from django.db.models.functions import ExtractHour, TruncDate
 from django.conf import settings
 from django.utils import timezone
+from django.middleware.csrf import get_token
 from django.views.decorators.csrf import ensure_csrf_cookie
 from rest_framework import status
 from rest_framework.decorators import api_view
@@ -38,7 +39,17 @@ User = get_user_model()
 @ensure_csrf_cookie
 @api_view(["GET"])
 def csrf_cookie(request):
-    return success_response("CSRF cookie set", None)
+    token = get_token(request)
+    response = success_response("CSRF cookie set", None)
+    response.set_cookie(
+        "csrftoken",
+        token,
+        secure=settings.CSRF_COOKIE_SECURE,
+        samesite=settings.CSRF_COOKIE_SAMESITE,
+        httponly=False,
+        path="/",
+    )
+    return response
 
 
 def success_response(message, data=None, status_code=status.HTTP_200_OK, **extra):

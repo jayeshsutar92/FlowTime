@@ -15,12 +15,20 @@ const normalizeApiBaseUrl = (value: string) => {
 };
 
 const configuredApiUrl = import.meta.env.VITE_API_URL?.trim();
+const isLocalhost =
+  typeof window !== "undefined" &&
+  (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1");
 
-if (import.meta.env.PROD && !configuredApiUrl) {
+if (import.meta.env.PROD && !isLocalhost && !configuredApiUrl) {
   throw new Error("Missing VITE_API_URL for production API requests.");
 }
 
-if (import.meta.env.PROD && configuredApiUrl && !/^https?:\/\//i.test(configuredApiUrl)) {
+if (
+  import.meta.env.PROD &&
+  !isLocalhost &&
+  configuredApiUrl &&
+  !/^https?:\/\//i.test(configuredApiUrl)
+) {
   throw new Error("VITE_API_URL must be an absolute backend URL in production.");
 }
 
