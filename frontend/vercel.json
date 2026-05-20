@@ -1,10 +1,6 @@
 {
   "rewrites": [
     {
-      "source": "/api/:path*",
-      "destination": "https://flowtime-backend-kzel.onrender.com/api/:path*"
-    },
-    {
       "source": "/:path*",
       "destination": "/index.html"
     }

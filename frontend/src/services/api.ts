@@ -2,7 +2,7 @@
 import axios, { AxiosHeaders } from "axios";
 
 const normalizeApiBaseUrl = (value: string) => {
-  const apiUrl = value.trim() || "/api";
+  const apiUrl = value.trim();
 
   if (/^https?:\/\//i.test(apiUrl)) {
     const url = new URL(apiUrl);
@@ -14,9 +14,17 @@ const normalizeApiBaseUrl = (value: string) => {
   return path || "/api";
 };
 
-const defaultApiUrl = "/api";
-const configuredApiUrl = import.meta.env.PROD ? undefined : import.meta.env.VITE_API_URL;
-const apiUrl = configuredApiUrl || defaultApiUrl;
+const configuredApiUrl = import.meta.env.VITE_API_URL?.trim();
+
+if (import.meta.env.PROD && !configuredApiUrl) {
+  throw new Error("Missing VITE_API_URL for production API requests.");
+}
+
+if (import.meta.env.PROD && configuredApiUrl && !/^https?:\/\//i.test(configuredApiUrl)) {
+  throw new Error("VITE_API_URL must be an absolute backend URL in production.");
+}
+
+const apiUrl = configuredApiUrl || "/api";
 
 export const API_BASE_URL = normalizeApiBaseUrl(apiUrl);
 
