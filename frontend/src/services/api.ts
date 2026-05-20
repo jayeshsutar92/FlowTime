@@ -68,6 +68,8 @@ export const ensureCsrfCookie = async () => {
   }
 };
 
+export const ensureFreshCsrfCookie = ensureCsrfCookie;
+
 const getCookie = (name: string) => {
   if (typeof document === "undefined") return null;
   const parts = document.cookie.split(";").map((part) => part.trim());
