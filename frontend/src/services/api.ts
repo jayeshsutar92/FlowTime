@@ -80,6 +80,14 @@ const getCookie = (name: string) => {
 };
 
 api.interceptors.request.use((config) => {
+  const method = (config.method || "get").toLowerCase();
+  if (!["get", "head", "options"].includes(method)) {
+    const csrfToken = getCookie("csrftoken");
+    if (csrfToken) {
+      config.headers = config.headers || {};
+      config.headers["X-CSRFToken"] = csrfToken;
+    }
+  }
   const token = localStorage.getItem("flowtime_token");
   if (token) {
     // Some backends check this. If it's pure session auth, withCredentials handles it.
