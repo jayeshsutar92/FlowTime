@@ -152,6 +152,7 @@ FRONTEND_ORIGINS = env_list(
     [
         "http://localhost:3000",
         "http://127.0.0.1:3000",
+        "https://flow-time-three.vercel.app",
         "https://flow-time-wheat.vercel.app",
     ],
 )
