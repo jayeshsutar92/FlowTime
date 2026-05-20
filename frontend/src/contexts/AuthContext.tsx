@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, useEffect } from "react";
-import api, { ensureFreshCsrfCookie, resetCsrfState } from "../services/api";
+import api, { ensureCsrfCookie, resetCsrfState } from "../services/api";
 
 interface AuthContextType {
   token: string | null;
@@ -21,11 +21,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const logout = () => {
     localStorage.removeItem("flowtime_token");
     resetCsrfState();
-    void ensureFreshCsrfCookie().catch(() => undefined);
     setToken(null);
   };
 
   useEffect(() => {
+    void ensureCsrfCookie().catch(() => undefined);
     const handleLogout = () => logout();
     window.addEventListener("flowtime:logout", handleLogout);
     return () => window.removeEventListener("flowtime:logout", handleLogout);

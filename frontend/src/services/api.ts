@@ -68,8 +68,6 @@ export const ensureCsrfCookie = async () => {
   }
 };
 
-export const ensureFreshCsrfCookie = ensureCsrfCookie;
-
 const getCookie = (name: string) => {
   if (typeof document === "undefined") return null;
   const parts = document.cookie.split(";").map((part) => part.trim());
@@ -81,20 +79,7 @@ const getCookie = (name: string) => {
   return null;
 };
 
-api.interceptors.request.use(async (config) => {
-  const method = (config.method || "get").toLowerCase();
-  if (![
-    "get",
-    "head",
-    "options",
-  ].includes(method)) {
-    await ensureCsrfCookie();
-    const csrfToken = getCookie("csrftoken");
-    if (csrfToken) {
-      config.headers = config.headers || {};
-      config.headers["X-CSRFToken"] = csrfToken;
-    }
-  }
+api.interceptors.request.use((config) => {
   const token = localStorage.getItem("flowtime_token");
   if (token) {
     // Some backends check this. If it's pure session auth, withCredentials handles it.
@@ -109,8 +94,6 @@ api.interceptors.response.use(
   (error) => {
     const status = error?.response?.status;
     const responseText = JSON.stringify(error?.response?.data ?? "").toLowerCase();
-    const isCsrfFailure =
-      status === 403 && responseText.includes("csrf");
     const isAuthFailure =
       status === 401 ||
       (status === 403 &&
@@ -122,9 +105,6 @@ api.interceptors.response.use(
     if (isAuthFailure) {
       localStorage.removeItem("flowtime_token");
       window.dispatchEvent(new Event("flowtime:logout"));
-    }
-    if (isCsrfFailure) {
-      resetCsrfState();
     }
     return Promise.reject(error);
   }
