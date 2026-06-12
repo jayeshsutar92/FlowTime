@@ -1,6 +1,6 @@
 import React, { useState } from "react";
 import { useNavigate } from "react-router-dom";
-import api, { ensureFreshCsrfCookie } from "../services/api";
+import api, { ensureCsrfCookie } from "../services/api";
 import { useAuth } from "../contexts/AuthContext";
 
 type AuthView = "login" | "signup" | "forgot_password" | "reset_password" | "otp_login";
@@ -41,7 +41,7 @@ export default function Auth() {
     setOtpHint(null);
     setLoading(true);
     try {
-      await ensureFreshCsrfCookie();
+      await ensureCsrfCookie();
       const { data } = await api.post("/login/", { identifier, password });
       login(data.data.token);
       navigate("/timer");
@@ -58,9 +58,9 @@ export default function Auth() {
     setOtpHint(null);
     setLoading(true);
     try {
-      await ensureFreshCsrfCookie();
+      await ensureCsrfCookie();
       await api.post("/signup/", { identifier, password });
-      await ensureFreshCsrfCookie();
+      await ensureCsrfCookie();
       const { data } = await api.post("/login/", { identifier, password });
       login(data.data.token);
       navigate("/timer");
@@ -78,7 +78,7 @@ export default function Auth() {
     setOtpHint(null);
     setLoading(true);
     try {
-      await ensureFreshCsrfCookie();
+      await ensureCsrfCookie();
       const { data } = await api.post("/forgot-password/", { identifier });
       setMessage("If the account exists, an OTP has been sent.");
       setOtpHint(data?.otp ?? null);
@@ -97,7 +97,7 @@ export default function Auth() {
     setOtpHint(null);
     setLoading(true);
     try {
-      await ensureFreshCsrfCookie();
+      await ensureCsrfCookie();
       await api.post("/reset-password/", { identifier, otp, new_password: newPassword });
       setMessage("Password reset successful. You can now login.");
       setView("login");
@@ -119,7 +119,7 @@ export default function Auth() {
     setLoading(true);
     try {
       // Using forgot-password to generate OTP for login, as they share the same OTP verification logic without purpose restriction.
-      await ensureFreshCsrfCookie();
+      await ensureCsrfCookie();
       const { data } = await api.post("/forgot-password/", { identifier });
       setMessage("An OTP has been generated for login.");
       setOtpHint(data?.otp ?? null);
@@ -136,7 +136,7 @@ export default function Auth() {
     setOtpHint(null);
     setLoading(true);
     try {
-      await ensureFreshCsrfCookie();
+      await ensureCsrfCookie();
       const { data } = await api.post("/login/", { identifier, otp });
       login(data.data.token);
       navigate("/timer");

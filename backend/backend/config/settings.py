@@ -84,9 +84,9 @@ DATABASES = {
         'ENGINE': 'django.db.backends.postgresql',
         'NAME': 'flowtime',
         'USER': 'postgres',
-        'PASSWORD': 'postgres',
+        'PASSWORD': 'Abc123$%45',
         'HOST': 'localhost',
-        'PORT': '5433',
+        'PORT': '5432',
     }
 }'''
 
