@@ -20,6 +20,7 @@ from rest_framework.response import Response
 
 from .models import MusicTrack, OTPVerification, Preset, Session
 from .serializers import (
+    AdminUserSerializer,
     ForgotPasswordSerializer,
     LoginSerializer,
     PresetCreateSerializer,
@@ -352,7 +353,7 @@ def login_user(request):
 
     return success_response(
         "Login successful",
-        {"token": request.session.session_key},
+        {"token": request.session.session_key, "is_admin": user.is_staff},
     )
 
 
@@ -965,3 +966,63 @@ def delete_music_queue_item(request, id):
 
     MUSIC_QUEUE.remove(id)
     return success_response("Track removed", {"track_id": id})
+
+
+# ---------------------------------------------------------------------------
+# Admin Management Views
+# ---------------------------------------------------------------------------
+
+
+def is_admin_user(view_func):
+    """Decorator that restricts access to authenticated staff users."""
+    from functools import wraps
+
+    @wraps(view_func)
+    def wrapper(request, *args, **kwargs):
+        if not request.user or not request.user.is_authenticated:
+            return error_response(
+                "Authentication required.",
+                status.HTTP_401_UNAUTHORIZED,
+            )
+        if not request.user.is_staff:
+            return error_response(
+                "Admin access required.",
+                status.HTTP_403_FORBIDDEN,
+            )
+        return view_func(request, *args, **kwargs)
+
+    return wrapper
+
+
+@api_view(["GET"])
+@is_admin_user
+def admin_list_users(request):
+    users = User.objects.all().order_by("-date_joined")
+    serializer = AdminUserSerializer(users, many=True)
+    return success_response("Users fetched", serializer.data)
+
+
+@api_view(["GET"])
+@is_admin_user
+def admin_user_count(request):
+    count = User.objects.count()
+    return success_response("User count fetched", {"count": count})
+
+
+@api_view(["DELETE"])
+@is_admin_user
+def admin_delete_user(request, user_id):
+    if request.user.id == user_id:
+        return error_response(
+            "Cannot delete your own account.",
+            status.HTTP_400_BAD_REQUEST,
+        )
+    try:
+        target_user = User.objects.get(id=user_id)
+    except User.DoesNotExist:
+        return error_response("User not found.", status.HTTP_404_NOT_FOUND)
+
+    username = target_user.username
+    target_user.delete()
+    logger.info("Admin %s deleted user %s (id=%s)", request.user.username, username, user_id)
+    return success_response("User deleted", {"id": user_id, "username": username})

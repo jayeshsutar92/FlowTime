@@ -43,7 +43,7 @@ export default function Auth() {
     try {
       await ensureCsrfCookie();
       const { data } = await api.post("/login/", { identifier, password });
-      login(data.data.token);
+      login(data.data.token, data.data.is_admin);
       navigate("/timer");
     } catch (err: any) {
       handleError(err);
@@ -62,7 +62,7 @@ export default function Auth() {
       await api.post("/signup/", { identifier, password });
       await ensureCsrfCookie();
       const { data } = await api.post("/login/", { identifier, password });
-      login(data.data.token);
+      login(data.data.token, data.data.is_admin);
       navigate("/timer");
     } catch (err: any) {
       handleError(err);
@@ -138,7 +138,7 @@ export default function Auth() {
     try {
       await ensureCsrfCookie();
       const { data } = await api.post("/login/", { identifier, otp });
-      login(data.data.token);
+      login(data.data.token, data.data.is_admin);
       navigate("/timer");
     } catch (err: any) {
       handleError(err);

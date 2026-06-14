@@ -14,12 +14,19 @@ import CustomTimer from "./pages/CustomTimer";
 import Dashboard from "./pages/Dashboard";
 import Presets from "./pages/Presets";
 import Music from "./pages/Music";
+import Admin from "./pages/Admin";
 import TopNav from "./components/TopNav";
 import RouteErrorBoundary from "./components/RouteErrorBoundary";
 
 const ProtectedRoute = ({ children }: { children: React.ReactNode }) => {
   const { isAuthenticated } = useAuth();
   if (!isAuthenticated) return <Navigate to="/auth" />;
+  return <>{children}</>;
+};
+
+const AdminRoute = ({ children }: { children: React.ReactNode }) => {
+  const { isAdmin } = useAuth();
+  if (!isAdmin) return <Navigate to="/timer" />;
   return <>{children}</>;
 };
 
@@ -49,6 +56,7 @@ export default function App() {
                         <Route path="/dashboard" element={<Dashboard />} />
                         <Route path="/presets" element={<Presets />} />
                         <Route path="/music" element={<Music />} />
+                        <Route path="/admin" element={<AdminRoute><Admin /></AdminRoute>} />
                         <Route path="*" element={<Navigate to="/timer" />} />
                       </Routes>
                     </RouteErrorBoundary>

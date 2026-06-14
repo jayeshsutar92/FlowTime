@@ -174,3 +174,12 @@ class MusicTrackSerializer(serializers.ModelSerializer):
         model = MusicTrack
         fields = ["id", "name", "file_path", "duration", "created_at"]
         read_only_fields = fields
+
+
+class AdminUserSerializer(serializers.Serializer):
+    id = serializers.IntegerField(read_only=True)
+    username = serializers.CharField(read_only=True)
+    email = serializers.EmailField(read_only=True)
+    date_joined = serializers.DateTimeField(read_only=True)
+    is_staff = serializers.BooleanField(read_only=True)
+

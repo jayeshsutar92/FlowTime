@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import api from "../services/api";
+import { playWorkCompleteSound, playBreakCompleteSound } from "../lib/sounds";
 import { Play, Pause, RefreshCw, SkipForward, AlertCircle, Sparkles, Zap, Trash2, CheckCircle2, TrendingUp, History, Timer as TimerIcon } from "lucide-react";
 import { cn } from "../lib/utils";
 
@@ -36,6 +37,7 @@ export default function CustomTimer() {
   const [stats, setStats] = useState({ flow: "0h", score: "0%", streak: "0d" });
 
   const timerRef = useRef<NodeJS.Timeout | null>(null);
+  const breakSoundPlayedRef = useRef(false);
   const BREAK_STORAGE_KEY = "flowtime_break_state";
 
   const computeRemainingSeconds = (
@@ -179,7 +181,9 @@ export default function CustomTimer() {
         const breakEnd = breakStartAt + breakDurationSeconds * 1000;
         const remaining = Math.max(0, Math.floor((breakEnd - Date.now()) / 1000));
         setTimeLeft(remaining);
-        if (remaining <= 0) {
+        if (remaining <= 0 && !breakSoundPlayedRef.current) {
+          breakSoundPlayedRef.current = true;
+          playBreakCompleteSound();
           setSessionState("idle");
           setIsActive(false);
           setCurrentSession((prev) => (prev < totalSessions ? prev + 1 : 1));
@@ -210,6 +214,8 @@ export default function CustomTimer() {
     try {
       await api.post("/end-session/", { session_id: id });
     } catch (e) {}
+    playWorkCompleteSound();
+    breakSoundPlayedRef.current = false;
     setSessionState("break");
     setIsActive(true);
     const isLongBreak = currentSession % 4 === 0 && currentSession <= totalSessions;

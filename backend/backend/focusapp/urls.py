@@ -24,4 +24,8 @@ urlpatterns = [
     path('music/tracks/', views.list_music_tracks),
     path('music/queue/', views.music_queue),
     path('music/queue/<int:id>/', views.delete_music_queue_item),
+    # Admin management
+    path('admin/users/', views.admin_list_users),
+    path('admin/users/count/', views.admin_user_count),
+    path('admin/users/<int:user_id>/', views.admin_delete_user),
 ]

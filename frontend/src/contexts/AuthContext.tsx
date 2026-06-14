@@ -4,7 +4,8 @@ import api, { ensureCsrfCookie, resetCsrfState } from "../services/api";
 interface AuthContextType {
   token: string | null;
   isAuthenticated: boolean;
-  login: (token: string) => void;
+  isAdmin: boolean;
+  login: (token: string, isAdmin?: boolean) => void;
   logout: () => void;
 }
 
@@ -12,16 +13,23 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [token, setToken] = useState<string | null>(localStorage.getItem("flowtime_token"));
+  const [isAdmin, setIsAdmin] = useState<boolean>(() => localStorage.getItem("flowtime_is_admin") === "true");
 
-  const login = (newToken: string) => {
+  const login = (newToken: string, admin?: boolean) => {
     localStorage.setItem("flowtime_token", newToken);
     setToken(newToken);
+    if (admin !== undefined) {
+      localStorage.setItem("flowtime_is_admin", String(admin));
+      setIsAdmin(admin);
+    }
   };
 
   const logout = () => {
     localStorage.removeItem("flowtime_token");
+    localStorage.removeItem("flowtime_is_admin");
     resetCsrfState();
     setToken(null);
+    setIsAdmin(false);
   };
 
   useEffect(() => {
@@ -47,7 +55,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   }, [token]);
 
   return (
-    <AuthContext.Provider value={{ token, isAuthenticated: !!token, login, logout }}>
+    <AuthContext.Provider value={{ token, isAuthenticated: !!token, isAdmin, login, logout }}>
       {children}
     </AuthContext.Provider>
   );

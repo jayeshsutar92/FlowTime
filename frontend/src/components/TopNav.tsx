@@ -1,17 +1,18 @@
 import { Link, useLocation } from "react-router-dom";
 import { cn } from "../lib/utils";
 import { useAuth } from "../contexts/AuthContext";
-import { LogOut } from "lucide-react";
+import { LogOut, Shield } from "lucide-react";
 
 export default function TopNav() {
   const location = useLocation();
-  const { isAuthenticated, logout } = useAuth();
+  const { isAuthenticated, isAdmin, logout } = useAuth();
 
   const links = [
     { name: "Timer", path: "/timer" },
     { name: "Dashboard", path: "/dashboard" },
     { name: "Presets", path: "/presets" },
     { name: "Focus Ambience", path: "/music" },
+    ...(isAdmin ? [{ name: "Admin", path: "/admin" }] : []),
   ];
 
   const handleLogout = () => {
