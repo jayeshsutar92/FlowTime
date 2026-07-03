@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from "react";
+import { useBlocker } from "react-router-dom";
 import api from "../services/api";
 import { playWorkCompleteSound, playBreakCompleteSound } from "../lib/sounds";
 import { Play, Pause, RefreshCw, SkipForward, AlertCircle, Sparkles, Zap, Trash2, CheckCircle2, TrendingUp, History, Timer as TimerIcon } from "lucide-react";
@@ -38,7 +39,51 @@ export default function Timer() {
 
   const timerRef = useRef<NodeJS.Timeout | null>(null);
   const breakSoundPlayedRef = useRef(false);
-  const BREAK_STORAGE_KEY = "flowtime_break_state";
+  const BREAK_STORAGE_KEY = "flowtime_default_break_state";
+
+  const blocker = useBlocker(
+    ({ currentValue, nextLocation }) =>
+      isActive && sessionState !== "idle" && currentValue.pathname !== nextLocation.pathname
+  );
+
+  useEffect(() => {
+    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+      if (isActive && sessionState !== "idle") {
+        e.preventDefault();
+        e.returnValue = "";
+      }
+    };
+    window.addEventListener("beforeunload", handleBeforeUnload);
+    return () => window.removeEventListener("beforeunload", handleBeforeUnload);
+  }, [isActive, sessionState]);
+
+  const handlePauseAndLeave = async () => {
+    if (isActive) {
+      await togglePause();
+    }
+    blocker.proceed?.();
+  };
+
+  const handleEndAndLeave = async () => {
+    if (sessionState === "work" && sessionId) {
+      try {
+        await api.post("/end-session/", { session_id: sessionId });
+      } catch (e) {}
+    }
+    setSessionState("idle");
+    setIsActive(false);
+    setCurrentSession(1);
+    setWorkDuration(25);
+    setBreakDuration(5);
+    setTotalSessions(4);
+    setLongBreak(15);
+    setTimeLeft(25 * 60);
+    setBreakStartAt(null);
+    setBreakDurationSeconds(null);
+    clearBreakState();
+    localStorage.removeItem("flowtime_active_timer_type");
+    blocker.proceed?.();
+  };
 
   const computeRemainingSeconds = (
     startAtMs: number,
@@ -82,6 +127,13 @@ export default function Timer() {
   useEffect(() => {
     fetchPresets();
     fetchStats();
+
+    const activeTimerType = localStorage.getItem("flowtime_active_timer_type");
+    if (activeTimerType !== "default") {
+      clearBreakState();
+      return;
+    }
+
     api.get("/sessions/").then((res) => {
       const running = res.data.data.find((s: any) => s.status === "running");
       const paused = res.data.data.find((s: any) => s.status === "paused");
@@ -155,7 +207,6 @@ export default function Timer() {
       setStats({
         flow: hoursStr,
         score: scoreRes.data.data.score + "%",
-        // This is a simplification for visual accuracy with design
         streak: "12d", 
       });
     } catch (e) {}
@@ -185,13 +236,22 @@ export default function Timer() {
         if (remaining <= 0 && !breakSoundPlayedRef.current) {
           breakSoundPlayedRef.current = true;
           playBreakCompleteSound();
-          setSessionState("idle");
-          setIsActive(false);
-          setCurrentSession((prev) => (prev < totalSessions ? prev + 1 : 1));
-          setTimeLeft(workDuration * 60);
-          setBreakStartAt(null);
-          setBreakDurationSeconds(null);
-          clearBreakState();
+          if (currentSession < totalSessions) {
+            startSession(currentSession + 1);
+          } else {
+            setSessionState("idle");
+            setIsActive(false);
+            setCurrentSession(1);
+            setWorkDuration(25);
+            setBreakDuration(5);
+            setTotalSessions(4);
+            setLongBreak(15);
+            setTimeLeft(25 * 60);
+            setBreakStartAt(null);
+            setBreakDurationSeconds(null);
+            clearBreakState();
+            localStorage.removeItem("flowtime_active_timer_type");
+          }
         }
       }
     }, 1000);
@@ -209,6 +269,7 @@ export default function Timer() {
     workDuration,
     totalSessions,
     sessionId,
+    currentSession,
   ]);
 
   const endWorkSession = async (id: number) => {
@@ -219,8 +280,9 @@ export default function Timer() {
     breakSoundPlayedRef.current = false;
     setSessionState("break");
     setIsActive(true);
-    // Is it a long break? 
-    const isLongBreak = currentSession % 4 === 0 && currentSession <= totalSessions;
+    
+    const completedWorkSessions = currentSession;
+    const isLongBreak = completedWorkSessions % 4 === 0;
     const durationSeconds = (isLongBreak ? longBreak : breakDuration) * 60;
     const startAt = Date.now();
     setBreakStartAt(startAt);
@@ -235,17 +297,18 @@ export default function Timer() {
       breakDuration,
       longBreak,
     });
-    fetchStats(); // Update stats after a session ends
+    fetchStats();
   };
 
-  const startSession = async () => {
+  const startSession = async (sessionNum?: number) => {
+    const targetSession = sessionNum ?? currentSession;
     try {
       setAdjustmentMessage(null);
       const res = await api.post("/start-session/", {
         work_duration: workDuration,
         break_duration: breakDuration,
         total_sessions: totalSessions,
-        current_session: currentSession,
+        current_session: targetSession,
       });
       const data = res.data.data;
       const effectiveWorkDuration = data?.work_duration ?? workDuration;
@@ -264,6 +327,8 @@ export default function Timer() {
       setSessionState("work");
       setTimeLeft(effectiveWorkDuration * 60);
       setIsActive(true);
+      setCurrentSession(targetSession);
+      localStorage.setItem("flowtime_active_timer_type", "default");
     } catch (e) {
       console.error(e);
     }
@@ -321,13 +386,22 @@ export default function Timer() {
     if (sessionState === "work" && sessionId) {
       endWorkSession(sessionId);
     } else if (sessionState === "break") {
-      setSessionState("idle");
-      setIsActive(false);
-      setCurrentSession((prev) => (prev < totalSessions ? prev + 1 : 1));
-      setTimeLeft(workDuration * 60);
-      setBreakStartAt(null);
-      setBreakDurationSeconds(null);
-      clearBreakState();
+      if (currentSession < totalSessions) {
+        startSession(currentSession + 1);
+      } else {
+        setSessionState("idle");
+        setIsActive(false);
+        setCurrentSession(1);
+        setWorkDuration(25);
+        setBreakDuration(5);
+        setTotalSessions(4);
+        setLongBreak(15);
+        setTimeLeft(25 * 60);
+        setBreakStartAt(null);
+        setBreakDurationSeconds(null);
+        clearBreakState();
+        localStorage.removeItem("flowtime_active_timer_type");
+      }
     }
   };
 
@@ -368,8 +442,9 @@ export default function Timer() {
     return `${m.toString().padStart(2, "0")}:${s.toString().padStart(2, "0")}`;
   };
 
+  const completedWorkSessions = currentSession;
   const currentTotalDuration = sessionState === "break" 
-    ? (currentSession % 4 === 0 ? longBreak * 60 : breakDuration * 60)
+    ? (completedWorkSessions % 4 === 0 ? longBreak * 60 : breakDuration * 60)
     : workDuration * 60;
     
   const progressPercent = sessionState === "idle" ? 0 : 100 - (timeLeft / currentTotalDuration) * 100;
@@ -377,7 +452,42 @@ export default function Timer() {
 
   return (
     <main className="min-h-screen pt-32 pb-20 px-4 md:px-margin-desktop flex flex-col items-center justify-start w-full relative z-10">
-      
+      {blocker.state === "blocked" && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[999] flex items-center justify-center p-4">
+          <div className="bg-[#141A28] border border-white/10 rounded-[2.5rem] p-8 max-w-[440px] w-full text-center shadow-2xl relative overflow-hidden">
+            <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[80%] h-[150px] bg-blue-500/10 blur-[50px] pointer-events-none rounded-full" />
+            
+            <h3 className="text-xl font-semibold text-white mb-4 relative z-10">
+              Active Focus Session
+            </h3>
+            <p className="text-sm text-slate-400 mb-8 relative z-10">
+              You have an active focus session. What would you like to do?
+            </p>
+            
+            <div className="flex flex-col gap-3 relative z-10">
+              <button
+                onClick={() => blocker.reset?.()}
+                className="w-full bg-[#2563EB] hover:bg-blue-500 text-white font-medium py-3 rounded-xl transition-all shadow-[0_0_20px_rgba(37,99,235,0.3)] cursor-pointer"
+              >
+                Continue Session
+              </button>
+              <button
+                onClick={handlePauseAndLeave}
+                className="w-full bg-[#1E2638] hover:bg-[#2A344A] border border-white/5 text-slate-300 hover:text-white font-medium py-3 rounded-xl transition-all cursor-pointer"
+              >
+                Pause Session
+              </button>
+              <button
+                onClick={handleEndAndLeave}
+                className="w-full bg-red-500/10 hover:bg-red-500/20 border border-red-500/20 text-red-400 font-medium py-3 rounded-xl transition-all cursor-pointer"
+              >
+                End Session
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {adjustmentMessage && (
         <div className="mb-6 bg-[#1A2234] border border-blue-500/20 text-white text-xs px-4 py-2 rounded-full shadow-lg flex items-center gap-2">
           <AlertCircle className="w-4 h-4 text-blue-500" />
@@ -448,7 +558,7 @@ export default function Timer() {
             
             {sessionState === "idle" ? (
               <button
-                onClick={startSession}
+                onClick={() => startSession()}
                 className="bg-[#2563EB] hover:bg-blue-500 text-white px-10 h-14 rounded-[1.25rem] font-medium tracking-wide flex items-center justify-center gap-2 transition-all shadow-[0_0_30px_rgba(37,99,235,0.4)] w-[180px] outline-none"
               >
                 <Play className="w-5 h-5" fill="currentColor" />
