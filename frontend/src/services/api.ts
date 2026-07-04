@@ -90,18 +90,32 @@ api.interceptors.request.use((config) => {
   }
   const token = localStorage.getItem("flowtime_token");
   if (token) {
-    // Some backends check this. If it's pure session auth, withCredentials handles it.
-    // But passing token is safe.
     config.headers.Authorization = `Bearer ${token}`; 
   }
   return config;
 });
 
+let isRefreshing = false;
+let failedQueue: any[] = [];
+
+const processQueue = (error: any, token: string | null = null) => {
+  failedQueue.forEach((prom) => {
+    if (error) {
+      prom.reject(error);
+    } else {
+      prom.resolve(token);
+    }
+  });
+  failedQueue = [];
+};
+
 api.interceptors.response.use(
   (response) => response,
-  (error) => {
+  async (error) => {
+    const originalRequest = error.config;
     const status = error?.response?.status;
     const responseText = JSON.stringify(error?.response?.data ?? "").toLowerCase();
+
     const isAuthFailure =
       status === 401 ||
       (status === 403 &&
@@ -110,9 +124,56 @@ api.interceptors.response.use(
           responseText.includes("credentials") ||
           responseText.includes("not authenticated")));
 
-    if (isAuthFailure) {
-      localStorage.removeItem("flowtime_token");
-      window.dispatchEvent(new Event("flowtime:logout"));
+    if (isAuthFailure && originalRequest && !originalRequest._retry) {
+      if (isRefreshing) {
+        return new Promise((resolve, reject) => {
+          failedQueue.push({ resolve, reject });
+        })
+          .then((token) => {
+            originalRequest.headers = originalRequest.headers || {};
+            originalRequest.headers.Authorization = `Bearer ${token}`;
+            return api(originalRequest);
+          })
+          .catch((err) => {
+            return Promise.reject(err);
+          });
+      }
+
+      originalRequest._retry = true;
+      isRefreshing = true;
+
+      const refresh = localStorage.getItem("flowtime_refresh");
+      if (refresh) {
+        try {
+          const { data } = await axios.post(`${API_BASE_URL}/token/refresh/`, { refresh }, {
+            withCredentials: true,
+          });
+          const newAccess = data.data.access;
+          const newRefresh = data.data.refresh;
+          localStorage.setItem("flowtime_token", newAccess);
+          if (newRefresh) {
+            localStorage.setItem("flowtime_refresh", newRefresh);
+          }
+          isRefreshing = false;
+          processQueue(null, newAccess);
+          originalRequest.headers = originalRequest.headers || {};
+          originalRequest.headers.Authorization = `Bearer ${newAccess}`;
+          return api(originalRequest);
+        } catch (refreshError) {
+          isRefreshing = false;
+          processQueue(refreshError, null);
+          localStorage.removeItem("flowtime_token");
+          localStorage.removeItem("flowtime_refresh");
+          localStorage.removeItem("flowtime_is_admin");
+          window.dispatchEvent(new Event("flowtime:logout"));
+          return Promise.reject(refreshError);
+        }
+      } else {
+        localStorage.removeItem("flowtime_token");
+        localStorage.removeItem("flowtime_refresh");
+        localStorage.removeItem("flowtime_is_admin");
+        window.dispatchEvent(new Event("flowtime:logout"));
+      }
     }
     return Promise.reject(error);
   }

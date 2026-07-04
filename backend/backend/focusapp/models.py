@@ -12,6 +12,13 @@ class Session(models.Model):
         (STATUS_COMPLETED, "Completed"),
     ]
 
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="sessions",
+        null=True,
+        blank=True,
+    )
     work_duration = models.IntegerField()
     break_duration = models.IntegerField()
     completed = models.BooleanField(default=False)
@@ -56,13 +63,21 @@ class Session(models.Model):
 
 
 class Preset(models.Model):
-    name = models.CharField(max_length=100, unique=True)
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="presets",
+        null=True,
+        blank=True,
+    )
+    name = models.CharField(max_length=100)
     work_duration = models.IntegerField()
     short_break = models.IntegerField()
     long_break = models.IntegerField()
 
     class Meta:
         ordering = ["name", "id"]
+        unique_together = ["user", "name"]
 
     def __str__(self):
         return self.name

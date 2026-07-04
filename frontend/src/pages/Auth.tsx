@@ -41,9 +41,8 @@ export default function Auth() {
     setOtpHint(null);
     setLoading(true);
     try {
-      await ensureCsrfCookie();
       const { data } = await api.post("/login/", { identifier, password });
-      login(data.data.token, data.data.is_admin);
+      login(data.data.access, data.data.refresh, data.data.is_admin);
       navigate("/timer");
     } catch (err: any) {
       handleError(err);
@@ -58,11 +57,9 @@ export default function Auth() {
     setOtpHint(null);
     setLoading(true);
     try {
-      await ensureCsrfCookie();
       await api.post("/signup/", { identifier, password });
-      await ensureCsrfCookie();
       const { data } = await api.post("/login/", { identifier, password });
-      login(data.data.token, data.data.is_admin);
+      login(data.data.access, data.data.refresh, data.data.is_admin);
       navigate("/timer");
     } catch (err: any) {
       handleError(err);
@@ -136,9 +133,8 @@ export default function Auth() {
     setOtpHint(null);
     setLoading(true);
     try {
-      await ensureCsrfCookie();
       const { data } = await api.post("/login/", { identifier, otp });
-      login(data.data.token, data.data.is_admin);
+      login(data.data.access, data.data.refresh, data.data.is_admin);
       navigate("/timer");
     } catch (err: any) {
       handleError(err);

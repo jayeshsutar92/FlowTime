@@ -3,9 +3,10 @@ import api, { ensureCsrfCookie, resetCsrfState } from "../services/api";
 
 interface AuthContextType {
   token: string | null;
+  refreshToken: string | null;
   isAuthenticated: boolean;
   isAdmin: boolean;
-  login: (token: string, isAdmin?: boolean) => void;
+  login: (accessToken: string, refreshToken: string, isAdmin?: boolean) => void;
   logout: () => void;
 }
 
@@ -13,11 +14,14 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [token, setToken] = useState<string | null>(localStorage.getItem("flowtime_token"));
+  const [refreshToken, setRefreshToken] = useState<string | null>(localStorage.getItem("flowtime_refresh"));
   const [isAdmin, setIsAdmin] = useState<boolean>(() => localStorage.getItem("flowtime_is_admin") === "true");
 
-  const login = (newToken: string, admin?: boolean) => {
-    localStorage.setItem("flowtime_token", newToken);
-    setToken(newToken);
+  const login = (accessToken: string, newRefreshToken: string, admin?: boolean) => {
+    localStorage.setItem("flowtime_token", accessToken);
+    localStorage.setItem("flowtime_refresh", newRefreshToken);
+    setToken(accessToken);
+    setRefreshToken(newRefreshToken);
     if (admin !== undefined) {
       localStorage.setItem("flowtime_is_admin", String(admin));
       setIsAdmin(admin);
@@ -25,14 +29,21 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   const logout = () => {
+    const currentRefresh = localStorage.getItem("flowtime_refresh");
+    if (currentRefresh) {
+      api.post("/logout/", { refresh: currentRefresh }).catch(() => undefined);
+    }
     localStorage.removeItem("flowtime_token");
+    localStorage.removeItem("flowtime_refresh");
     localStorage.removeItem("flowtime_is_admin");
     resetCsrfState();
     setToken(null);
+    setRefreshToken(null);
     setIsAdmin(false);
   };
 
   useEffect(() => {
+    // Keep CSRF cookie for non-JWT actions if any, but do not block on it
     void ensureCsrfCookie().catch(() => undefined);
     const handleLogout = () => logout();
     window.addEventListener("flowtime:logout", handleLogout);
@@ -55,7 +66,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   }, [token]);
 
   return (
-    <AuthContext.Provider value={{ token, isAuthenticated: !!token, isAdmin, login, logout }}>
+    <AuthContext.Provider value={{ token, refreshToken, isAuthenticated: !!token, isAdmin, login, logout }}>
       {children}
     </AuthContext.Provider>
   );

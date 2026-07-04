@@ -1,3 +1,4 @@
+from rest_framework_simplejwt.tokens import RefreshToken
 from datetime import timedelta
 
 from django.contrib.auth import get_user_model
@@ -224,6 +225,15 @@ class AuthApiTests(APITestCase):
 
 
 class SessionApiTests(APITestCase):
+    def setUp(self):
+        self.user = User.objects.create_user(
+            username="sessiontestuser",
+            email="sessiontest@example.com",
+            password="Password123!"
+        )
+        refresh = RefreshToken.for_user(self.user)
+        self.client.credentials(HTTP_AUTHORIZATION=f"Bearer {refresh.access_token}")
+
     def test_start_session_creates_running_session(self):
         response = self.client.post(
             "/api/start-session/",
@@ -339,7 +349,7 @@ class SessionApiTests(APITestCase):
 
     def test_start_session_uses_higher_adaptive_short_break_for_low_completion_rate(self):
         for _ in range(6):
-            Session.objects.create(
+            Session.objects.create(user=self.user, 
                 work_duration=25,
                 break_duration=5,
                 total_sessions=4,
@@ -347,7 +357,7 @@ class SessionApiTests(APITestCase):
                 status=Session.STATUS_PAUSED,
             )
         for _ in range(4):
-            Session.objects.create(
+            Session.objects.create(user=self.user, 
                 work_duration=25,
                 break_duration=5,
                 total_sessions=4,
@@ -386,14 +396,14 @@ class SessionApiTests(APITestCase):
 
     def test_start_session_reduces_workload_when_recent_completion_rate_is_low(self):
         for _ in range(4):
-            Session.objects.create(
+            Session.objects.create(user=self.user, 
                 work_duration=30,
                 break_duration=5,
                 total_sessions=4,
                 current_session=1,
                 status=Session.STATUS_PAUSED,
             )
-        Session.objects.create(
+        Session.objects.create(user=self.user, 
             work_duration=30,
             break_duration=5,
             total_sessions=4,
@@ -420,7 +430,7 @@ class SessionApiTests(APITestCase):
 
     def test_start_session_increases_workload_slightly_when_recent_completion_rate_is_high(self):
         for _ in range(5):
-            Session.objects.create(
+            Session.objects.create(user=self.user, 
                 work_duration=30,
                 break_duration=10,
                 total_sessions=4,
@@ -447,7 +457,7 @@ class SessionApiTests(APITestCase):
 
     def test_start_session_keeps_original_values_when_recent_completion_rate_is_balanced(self):
         for _ in range(2):
-            Session.objects.create(
+            Session.objects.create(user=self.user, 
                 work_duration=35,
                 break_duration=7,
                 total_sessions=4,
@@ -455,7 +465,7 @@ class SessionApiTests(APITestCase):
                 status=Session.STATUS_COMPLETED,
             )
         for _ in range(2):
-            Session.objects.create(
+            Session.objects.create(user=self.user, 
                 work_duration=35,
                 break_duration=7,
                 total_sessions=4,
@@ -482,7 +492,7 @@ class SessionApiTests(APITestCase):
 
     def test_start_session_does_not_mark_adjusted_when_values_round_back_to_original(self):
         for _ in range(5):
-            Session.objects.create(
+            Session.objects.create(user=self.user, 
                 work_duration=25,
                 break_duration=1,
                 total_sessions=4,
@@ -508,7 +518,7 @@ class SessionApiTests(APITestCase):
         self.assertIsNone(response.data["data"]["adjustment_reason"])
 
     def test_start_session_auto_completes_existing_running_session(self):
-        stale_session = Session.objects.create(
+        stale_session = Session.objects.create(user=self.user, 
             work_duration=25,
             break_duration=5,
             total_sessions=4,
@@ -533,7 +543,7 @@ class SessionApiTests(APITestCase):
         self.assertEqual(Session.objects.filter(status=Session.STATUS_RUNNING).count(), 1)
 
     def test_start_session_allows_new_session_after_completed_session(self):
-        Session.objects.create(
+        Session.objects.create(user=self.user, 
             work_duration=25,
             break_duration=5,
             total_sessions=4,
@@ -555,7 +565,7 @@ class SessionApiTests(APITestCase):
         self.assertEqual(Session.objects.filter(status=Session.STATUS_RUNNING).count(), 1)
 
     def test_pause_session_changes_running_session_to_paused(self):
-        session = Session.objects.create(
+        session = Session.objects.create(user=self.user, 
             work_duration=25,
             break_duration=5,
             total_sessions=4,
@@ -585,7 +595,7 @@ class SessionApiTests(APITestCase):
         self.assertIn("total_sessions", response.data["details"])
 
     def test_end_session_requires_running_session(self):
-        session = Session.objects.create(
+        session = Session.objects.create(user=self.user, 
             work_duration=25,
             break_duration=5,
             total_sessions=4,
@@ -605,7 +615,7 @@ class SessionApiTests(APITestCase):
         self.assertEqual(response.data["error"], "Only running sessions can be completed.")
 
     def test_end_session_marks_running_session_completed(self):
-        session = Session.objects.create(
+        session = Session.objects.create(user=self.user, 
             work_duration=25,
             break_duration=5,
             total_sessions=4,
@@ -625,14 +635,14 @@ class SessionApiTests(APITestCase):
         self.assertEqual(response.data["data"]["status"], Session.STATUS_COMPLETED)
 
     def test_get_sessions_returns_latest_first(self):
-        older = Session.objects.create(
+        older = Session.objects.create(user=self.user, 
             work_duration=25,
             break_duration=5,
             total_sessions=4,
             current_session=1,
             status=Session.STATUS_RUNNING,
         )
-        newer = Session.objects.create(
+        newer = Session.objects.create(user=self.user, 
             work_duration=50,
             break_duration=10,
             total_sessions=4,
@@ -649,21 +659,21 @@ class SessionApiTests(APITestCase):
         self.assertEqual(response.data["data"][0]["status"], Session.STATUS_COMPLETED)
 
     def test_stats_only_counts_completed_sessions(self):
-        Session.objects.create(
+        Session.objects.create(user=self.user, 
             work_duration=25,
             break_duration=5,
             total_sessions=4,
             current_session=1,
             status=Session.STATUS_COMPLETED,
         )
-        Session.objects.create(
+        Session.objects.create(user=self.user, 
             work_duration=50,
             break_duration=10,
             total_sessions=4,
             current_session=2,
             status=Session.STATUS_COMPLETED,
         )
-        Session.objects.create(
+        Session.objects.create(user=self.user, 
             work_duration=15,
             break_duration=3,
             total_sessions=4,
@@ -679,21 +689,21 @@ class SessionApiTests(APITestCase):
         self.assertEqual(response.data["data"]["average_session_time"], 37.5)
 
     def test_get_insights_returns_aggregated_focus_metrics(self):
-        morning = Session.objects.create(
+        morning = Session.objects.create(user=self.user, 
             work_duration=20,
             break_duration=5,
             total_sessions=4,
             current_session=1,
             status=Session.STATUS_COMPLETED,
         )
-        afternoon = Session.objects.create(
+        afternoon = Session.objects.create(user=self.user, 
             work_duration=40,
             break_duration=5,
             total_sessions=4,
             current_session=2,
             status=Session.STATUS_COMPLETED,
         )
-        Session.objects.create(
+        Session.objects.create(user=self.user, 
             work_duration=15,
             break_duration=5,
             total_sessions=4,
@@ -713,21 +723,21 @@ class SessionApiTests(APITestCase):
         self.assertEqual(response.data["data"]["recommendation"], "Maintain current routine")
 
     def test_get_productivity_score_returns_safe_score_and_level(self):
-        Session.objects.create(
+        Session.objects.create(user=self.user, 
             work_duration=60,
             break_duration=5,
             total_sessions=4,
             current_session=1,
             status=Session.STATUS_PAUSED,
         )
-        first = Session.objects.create(
+        first = Session.objects.create(user=self.user, 
             work_duration=50,
             break_duration=5,
             total_sessions=4,
             current_session=2,
             status=Session.STATUS_COMPLETED,
         )
-        second = Session.objects.create(
+        second = Session.objects.create(user=self.user, 
             work_duration=40,
             break_duration=5,
             total_sessions=4,
@@ -752,21 +762,21 @@ class SessionApiTests(APITestCase):
         self.assertEqual(response.data["data"]["level"], "No data")
 
     def test_get_heatmap_returns_last_seven_days_oldest_to_newest(self):
-        five_days_ago = Session.objects.create(
+        five_days_ago = Session.objects.create(user=self.user, 
             work_duration=25,
             break_duration=5,
             total_sessions=4,
             current_session=1,
             status=Session.STATUS_COMPLETED,
         )
-        today_one = Session.objects.create(
+        today_one = Session.objects.create(user=self.user, 
             work_duration=30,
             break_duration=5,
             total_sessions=4,
             current_session=2,
             status=Session.STATUS_COMPLETED,
         )
-        today_two = Session.objects.create(
+        today_two = Session.objects.create(user=self.user, 
             work_duration=35,
             break_duration=5,
             total_sessions=4,
@@ -793,6 +803,15 @@ class SessionApiTests(APITestCase):
 
 
 class PresetApiTests(APITestCase):
+    def setUp(self):
+        self.user = User.objects.create_user(
+            username="presettestuser",
+            email="presettest@example.com",
+            password="Password123!"
+        )
+        refresh = RefreshToken.for_user(self.user)
+        self.client.credentials(HTTP_AUTHORIZATION=f"Bearer {refresh.access_token}")
+
     def test_save_preset_creates_preset(self):
         response = self.client.post(
             "/api/save-preset/",
@@ -809,13 +828,13 @@ class PresetApiTests(APITestCase):
         self.assertEqual(Preset.objects.count(), 1)
 
     def test_get_presets_returns_all_saved_presets_latest_first(self):
-        older = Preset.objects.create(
+        older = Preset.objects.create(user=self.user, 
             name="Study Session",
             work_duration=45,
             short_break=10,
             long_break=20,
         )
-        newer = Preset.objects.create(
+        newer = Preset.objects.create(user=self.user, 
             name="Quick Focus",
             work_duration=25,
             short_break=5,
@@ -836,3 +855,54 @@ class PresetApiTests(APITestCase):
 
         self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
         self.assertEqual(response.data["error"], "Preset not found")
+
+
+class DataIsolationAndJwtTests(APITestCase):
+    def setUp(self):
+        self.user_a = User.objects.create_user(
+            username="usera",
+            email="usera@example.com",
+            password="Password123!"
+        )
+        self.user_b = User.objects.create_user(
+            username="userb",
+            email="userb@example.com",
+            password="Password123!"
+        )
+
+    def test_protected_endpoints_require_authentication(self):
+        # Accessing session list without login
+        response = self.client.get("/api/sessions/")
+        self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
+
+    def test_data_isolation_between_users(self):
+        # Create session and preset for User A
+        Session.objects.create(
+            user=self.user_a,
+            work_duration=25,
+            break_duration=5,
+            total_sessions=4,
+            current_session=1
+        )
+        Preset.objects.create(
+            user=self.user_a,
+            name="UserA Preset",
+            work_duration=25,
+            short_break=5,
+            long_break=15
+        )
+
+        # Authenticate as User B
+        refresh = RefreshToken.for_user(self.user_b)
+        self.client.credentials(HTTP_AUTHORIZATION=f"Bearer {refresh.access_token}")
+
+        # User B should not see User A's session
+        response = self.client.get("/api/sessions/")
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(response.data["data"]), 0)
+
+        # User B should not see User A's preset
+        response = self.client.get("/api/presets/")
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(response.data["data"]), 0)
+

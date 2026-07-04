@@ -5,6 +5,8 @@ urlpatterns = [
     path('csrf/', views.csrf_cookie),
     path('signup/', views.signup),
     path('login/', views.login_user),
+    path('logout/', views.logout_user),
+    path('token/refresh/', views.custom_token_refresh),
     path('forgot-password/', views.forgot_password),
     path('reset-password/', views.reset_password),
     path('start-session/', views.start_session),

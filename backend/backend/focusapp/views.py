@@ -15,8 +15,10 @@ from django.utils import timezone
 from django.middleware.csrf import get_token
 from django.views.decorators.csrf import ensure_csrf_cookie
 from rest_framework import status
-from rest_framework.decorators import api_view
+from rest_framework.decorators import api_view, permission_classes
+from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
+from rest_framework_simplejwt.tokens import RefreshToken
 
 from .models import MusicTrack, OTPVerification, Preset, Session
 from .serializers import (
@@ -90,9 +92,9 @@ def parse_days_filter(days_value):
     return days
 
 
-def get_recent_completion_rate(limit=10):
+def get_recent_completion_rate(user, limit=10):
     recent_sessions = list(
-        Session.objects.order_by("-created_at").values_list("status", flat=True)[:limit]
+        Session.objects.filter(user=user).order_by("-created_at").values_list("status", flat=True)[:limit]
     )
     if not recent_sessions:
         return None
@@ -101,8 +103,8 @@ def get_recent_completion_rate(limit=10):
     return completed_sessions / len(recent_sessions)
 
 
-def get_adaptive_break_factor():
-    completion_rate = get_recent_completion_rate()
+def get_adaptive_break_factor(user):
+    completion_rate = get_recent_completion_rate(user)
     if completion_rate is None:
         return 0.2
     if completion_rate < 0.5:
@@ -128,9 +130,9 @@ def should_use_long_break(current_session, total_sessions):
     )
 
 
-def get_recent_session_metrics(limit=5):
+def get_recent_session_metrics(user, limit=5):
     recent_sessions = list(
-        Session.objects.order_by("-created_at").values("status", "work_duration")[:limit]
+        Session.objects.filter(user=user).order_by("-created_at").values("status", "work_duration")[:limit]
     )
     if not recent_sessions:
         return None
@@ -148,10 +150,10 @@ def get_recent_session_metrics(limit=5):
     }
 
 
-def adjust_session_durations(work_duration, break_duration):
+def adjust_session_durations(user, work_duration, break_duration):
     original_work_duration = work_duration
     original_break_duration = break_duration
-    metrics = get_recent_session_metrics()
+    metrics = get_recent_session_metrics(user)
     if metrics is None:
         return {
             "work_duration": work_duration,
@@ -224,9 +226,9 @@ def format_focus_hour(hour):
     return f"{start_label} - {end_label}"
 
 
-def get_completed_streak():
+def get_completed_streak(user):
     streak = 0
-    recent_statuses = Session.objects.order_by("-created_at").values_list("status", flat=True)
+    recent_statuses = Session.objects.filter(user=user).order_by("-created_at").values_list("status", flat=True)
     for session_status in recent_statuses:
         if session_status != Session.STATUS_COMPLETED:
             break
@@ -243,15 +245,15 @@ def calculate_productivity_score(completion_rate, avg_session_length, streak):
     return int(score)
 
 
-def get_session_or_404(session_id):
+def get_session_or_404(session_id, user):
     try:
-        return Session.objects.get(id=session_id)
+        return Session.objects.get(id=session_id, user=user)
     except Session.DoesNotExist:
         return None
 
 
-def complete_running_sessions():
-    return Session.objects.filter(status=Session.STATUS_RUNNING).update(
+def complete_running_sessions(user):
+    return Session.objects.filter(user=user, status=Session.STATUS_RUNNING).update(
         status=Session.STATUS_COMPLETED,
         completed=True,
     )
@@ -347,14 +349,44 @@ def login_user(request):
         otp_record.is_used = True
         otp_record.save(update_fields=["is_used"])
 
-    login(request, user)
-    if not request.session.session_key:
-        request.session.save()
+    refresh = RefreshToken.for_user(user)
+    access_token = str(refresh.access_token)
 
     return success_response(
         "Login successful",
-        {"token": request.session.session_key, "is_admin": user.is_staff},
+        {
+            "token": access_token,
+            "access": access_token,
+            "refresh": str(refresh),
+            "is_admin": user.is_staff,
+        },
     )
+
+
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
+def logout_user(request):
+    try:
+        refresh_token = request.data.get("refresh")
+        if not refresh_token:
+            return Response({"error": "Refresh token required."}, status=status.HTTP_400_BAD_REQUEST)
+        token = RefreshToken(refresh_token)
+        token.blacklist()
+        return success_response("Logout successful")
+    except Exception as e:
+        return Response({"error": "Invalid token or logout failed."}, status=status.HTTP_400_BAD_REQUEST)
+
+
+@api_view(["POST"])
+def custom_token_refresh(request):
+    from rest_framework_simplejwt.serializers import TokenRefreshSerializer
+    serializer = TokenRefreshSerializer(data=request.data)
+    try:
+        serializer.is_valid(raise_exception=True)
+        return success_response("Token refreshed", serializer.validated_data)
+    except Exception as e:
+        return Response({"error": "Invalid refresh token."}, status=status.HTTP_401_UNAUTHORIZED)
+
 
 
 @api_view(["POST"])
@@ -427,19 +459,20 @@ def reset_password(request):
 
 
 @api_view(["GET"])
+@permission_classes([IsAuthenticated])
 def get_productivity_score(request):
-    total_sessions = Session.objects.count()
+    total_sessions = Session.objects.filter(user=request.user).count()
     if total_sessions == 0:
         return success_response(
             "Score fetched",
             {"score": 0, "level": "No data"},
         )
 
-    completed_sessions = Session.objects.filter(status=Session.STATUS_COMPLETED)
+    completed_sessions = Session.objects.filter(user=request.user, status=Session.STATUS_COMPLETED)
     completed_count = completed_sessions.count()
     completion_rate = completed_count / total_sessions if total_sessions else 0
     avg_session_length = completed_sessions.aggregate(avg=Avg("work_duration"))["avg"] or 0
-    streak = get_completed_streak()
+    streak = get_completed_streak(request.user)
     score = calculate_productivity_score(completion_rate, avg_session_length, streak)
 
     if score < 40:
@@ -456,12 +489,13 @@ def get_productivity_score(request):
 
 
 @api_view(["GET"])
+@permission_classes([IsAuthenticated])
 def get_heatmap(request):
     today = timezone.localdate()
     start_date = today - timedelta(days=6)
 
     session_counts = (
-        Session.objects.filter(created_at__date__gte=start_date, created_at__date__lte=today)
+        Session.objects.filter(user=request.user, created_at__date__gte=start_date, created_at__date__lte=today)
         .annotate(day=TruncDate("created_at"))
         .values("day")
         .annotate(total=Count("id"))
@@ -481,9 +515,10 @@ def get_heatmap(request):
 
 
 @api_view(["GET"])
+@permission_classes([IsAuthenticated])
 def get_insights(request):
-    completed_sessions = Session.objects.filter(status=Session.STATUS_COMPLETED)
-    all_sessions = Session.objects.all()
+    completed_sessions = Session.objects.filter(user=request.user, status=Session.STATUS_COMPLETED)
+    all_sessions = Session.objects.filter(user=request.user)
 
     avg_session_length = completed_sessions.aggregate(avg=Avg("work_duration"))["avg"] or 0
     total_sessions = all_sessions.count()
@@ -511,6 +546,7 @@ def get_insights(request):
 
 
 @api_view(["POST"])
+@permission_classes([IsAuthenticated])
 def start_session(request):
     logger.info("start_session request data=%s", request.data)
     serializer = StartSessionSerializer(data=request.data)
@@ -521,14 +557,16 @@ def start_session(request):
             serializer.errors,
         )
 
-    complete_running_sessions()
-    adaptive_break_factor = get_adaptive_break_factor()
+    complete_running_sessions(request.user)
+    adaptive_break_factor = get_adaptive_break_factor(request.user)
     adjusted_session = adjust_session_durations(
+        request.user,
         serializer.validated_data["work_duration"],
         serializer.validated_data["break_duration"],
     )
 
     session = Session.objects.create(
+        user=request.user,
         work_duration=adjusted_session["work_duration"],
         break_duration=adjusted_session["break_duration"],
         completed=False,
@@ -596,6 +634,7 @@ def start_session(request):
 
 
 @api_view(["POST"])
+@permission_classes([IsAuthenticated])
 def pause_session(request):
     serializer = SessionTransitionSerializer(data=request.data)
     if not serializer.is_valid():
@@ -607,7 +646,7 @@ def pause_session(request):
             serializer.errors,
         )
 
-    session = get_session_or_404(serializer.validated_data["session_id"])
+    session = get_session_or_404(serializer.validated_data["session_id"], request.user)
     if session is None:
         return error_response("Session not Found", status.HTTP_404_NOT_FOUND)
     if session.status != Session.STATUS_RUNNING:
@@ -631,6 +670,7 @@ def pause_session(request):
 
 
 @api_view(["POST"])
+@permission_classes([IsAuthenticated])
 def resume_session(request):
     serializer = SessionTransitionSerializer(data=request.data)
     if not serializer.is_valid():
@@ -642,7 +682,7 @@ def resume_session(request):
             serializer.errors,
         )
 
-    session = get_session_or_404(serializer.validated_data["session_id"])
+    session = get_session_or_404(serializer.validated_data["session_id"], request.user)
     if session is None:
         return error_response("Session not Found", status.HTTP_404_NOT_FOUND)
     if session.status != Session.STATUS_PAUSED:
@@ -669,6 +709,7 @@ def resume_session(request):
 
 
 @api_view(["POST"])
+@permission_classes([IsAuthenticated])
 def end_session(request):
     serializer = SessionTransitionSerializer(data=request.data)
     if not serializer.is_valid():
@@ -680,7 +721,7 @@ def end_session(request):
             serializer.errors,
         )
 
-    session = get_session_or_404(serializer.validated_data["session_id"])
+    session = get_session_or_404(serializer.validated_data["session_id"], request.user)
     if session is None:
         return error_response("Session not Found", status.HTTP_404_NOT_FOUND)
     if session.status != Session.STATUS_RUNNING:
@@ -699,8 +740,9 @@ def end_session(request):
 
 
 @api_view(["GET"])
+@permission_classes([IsAuthenticated])
 def get_stats(request):
-    sessions = Session.objects.filter(status=Session.STATUS_COMPLETED)
+    sessions = Session.objects.filter(user=request.user, status=Session.STATUS_COMPLETED)
     days = parse_days_filter(request.query_params.get("days"))
     if isinstance(days, str):
         return error_response(days, status.HTTP_400_BAD_REQUEST)
@@ -726,6 +768,7 @@ def get_stats(request):
 
 
 @api_view(["POST"])
+@permission_classes([IsAuthenticated])
 def save_preset(request):
     payload = normalize_preset_request_payload(request.data)
     serializer = PresetCreateSerializer(data=payload)
@@ -742,6 +785,7 @@ def save_preset(request):
 
     try:
         preset = Preset.objects.create(
+            user=request.user,
             name=validated["name"],
             work_duration=validated["work_duration"],
             short_break=validated["break_duration"],
@@ -761,8 +805,9 @@ def save_preset(request):
 
 
 @api_view(["GET"])
+@permission_classes([IsAuthenticated])
 def get_presets(request):
-    presets = Preset.objects.all().order_by("-id")
+    presets = Preset.objects.filter(user=request.user).order_by("-id")
     return success_response(
         "Presets fetched",
         [build_preset_payload(preset) for preset in presets],
@@ -770,8 +815,9 @@ def get_presets(request):
 
 
 @api_view(["GET"])
+@permission_classes([IsAuthenticated])
 def get_sessions(request):
-    serializer = SessionSerializer(Session.objects.all(), many=True)
+    serializer = SessionSerializer(Session.objects.filter(user=request.user), many=True)
     return success_response("Sessions fetched successfully.", serializer.data)
 
 
@@ -806,9 +852,10 @@ def normalize_preset_request_payload(raw_payload):
 
 
 @api_view(["GET", "POST"])
+@permission_classes([IsAuthenticated])
 def presets_collection(request):
     if request.method == "GET":
-        presets = Preset.objects.all().order_by("-id")
+        presets = Preset.objects.filter(user=request.user).order_by("-id")
         return success_response(
             "Presets fetched",
             [build_preset_payload(preset) for preset in presets],
@@ -829,6 +876,7 @@ def presets_collection(request):
 
     try:
         preset = Preset.objects.create(
+            user=request.user,
             name=validated["name"],
             work_duration=validated["work_duration"],
             short_break=validated["break_duration"],
@@ -847,11 +895,11 @@ def presets_collection(request):
     )
 
 
-def delete_preset_record(preset_id):
+def delete_preset_record(user, preset_id):
     try:
-        preset = Preset.objects.get(id=preset_id)
+        preset = Preset.objects.get(id=preset_id, user=user)
     except Preset.DoesNotExist:
-        return simple_error_response(
+        return error_response(
             "Preset not found",
             status_code=status.HTTP_404_NOT_FOUND,
         )
@@ -861,13 +909,15 @@ def delete_preset_record(preset_id):
 
 
 @api_view(["DELETE"])
+@permission_classes([IsAuthenticated])
 def delete_preset(request, id):
-    return delete_preset_record(id)
+    return delete_preset_record(request.user, id)
 
 
 @api_view(["DELETE"])
+@permission_classes([IsAuthenticated])
 def delete_preset_by_id(request, id):
-    return delete_preset_record(id)
+    return delete_preset_record(request.user, id)
 
 
 def parse_optional_int(value, field_name):
@@ -890,6 +940,7 @@ def get_music_track(track_id):
 
 
 @api_view(["POST"])
+@permission_classes([IsAuthenticated])
 def upload_music(request):
     uploaded_file = request.FILES.get("file")
     name = request.data.get("name")
@@ -927,6 +978,7 @@ def upload_music(request):
 
 
 @api_view(["GET"])
+@permission_classes([IsAuthenticated])
 def list_music_tracks(request):
     tracks = MusicTrack.objects.all()
     serializer = MusicTrackSerializer(tracks, many=True)
@@ -934,6 +986,7 @@ def list_music_tracks(request):
 
 
 @api_view(["GET", "POST"])
+@permission_classes([IsAuthenticated])
 def music_queue(request):
     if request.method == "GET":
         if not MUSIC_QUEUE:
@@ -960,6 +1013,7 @@ def music_queue(request):
 
 
 @api_view(["DELETE"])
+@permission_classes([IsAuthenticated])
 def delete_music_queue_item(request, id):
     if id not in MUSIC_QUEUE:
         return simple_error_response("Track not in queue.", status_code=status.HTTP_404_NOT_FOUND)
