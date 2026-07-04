@@ -11,9 +11,9 @@ RUN python - <<'PY'
 import pathlib
 raw = pathlib.Path("/app/requirements.txt").read_bytes()
 try:
-    text = raw.decode("utf-16")
+    text = raw.decode("utf-8-sig")
 except UnicodeError:
-    text = raw.decode("utf-8")
+    text = raw.decode("utf-16")
 pathlib.Path("/tmp/requirements.txt").write_text(text, encoding="utf-8")
 PY
 
