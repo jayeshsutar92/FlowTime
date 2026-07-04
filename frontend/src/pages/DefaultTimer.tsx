@@ -67,7 +67,7 @@ export default function Timer() {
   const handleEndAndLeave = async () => {
     if (sessionState === "work" && sessionId) {
       try {
-        await api.post("/end-session/", { session_id: sessionId });
+        await api.post("/end-session/", { session_id: sessionId, completed: false });
       } catch (e) {}
     }
     setSessionState("idle");
@@ -227,7 +227,7 @@ export default function Timer() {
         );
         setTimeLeft(remaining);
         if (remaining <= 0) {
-          endWorkSession(sessionId);
+          endWorkSession(sessionId, true);
         }
       } else if (sessionState === "break" && breakStartAt && breakDurationSeconds) {
         const breakEnd = breakStartAt + breakDurationSeconds * 1000;
@@ -272,9 +272,9 @@ export default function Timer() {
     currentSession,
   ]);
 
-  const endWorkSession = async (id: number) => {
+  const endWorkSession = async (id: number, naturallyCompleted: boolean) => {
     try {
-      await api.post("/end-session/", { session_id: id });
+      await api.post("/end-session/", { session_id: id, completed: naturallyCompleted });
     } catch (e) {}
     playWorkCompleteSound();
     breakSoundPlayedRef.current = false;
@@ -305,13 +305,13 @@ export default function Timer() {
     try {
       setAdjustmentMessage(null);
       const res = await api.post("/start-session/", {
-        work_duration: workDuration,
-        break_duration: breakDuration,
-        total_sessions: totalSessions,
+        work_duration: 25,
+        break_duration: 5,
+        total_sessions: 4,
         current_session: targetSession,
       });
       const data = res.data.data;
-      const effectiveWorkDuration = data?.work_duration ?? workDuration;
+      const effectiveWorkDuration = data?.work_duration ?? 25;
       const startedAt = data?.started_at ? new Date(data.started_at).getTime() : Date.now();
       setSessionId(data.session_id);
       setSessionStartAt(startedAt);
@@ -360,10 +360,25 @@ export default function Timer() {
     setIsActive(!isActive);
   };
 
-  const resetTimer = () => {
+  const resetTimer = async () => {
+    if (sessionState === "work" && sessionId) {
+      try {
+        await api.post("/end-session/", { session_id: sessionId, completed: false });
+      } catch (e) {}
+    }
     setIsActive(false);
     if (sessionState === "work") {
-      setTimeLeft(workDuration * 60);
+      setSessionState("idle");
+      setCurrentSession(1);
+      setWorkDuration(25);
+      setBreakDuration(5);
+      setTotalSessions(4);
+      setLongBreak(15);
+      setTimeLeft(25 * 60);
+      setBreakStartAt(null);
+      setBreakDurationSeconds(null);
+      clearBreakState();
+      localStorage.removeItem("flowtime_active_timer_type");
     } else if (sessionState === "break") {
       const durationSeconds = breakDuration * 60;
       const startAt = Date.now();
@@ -384,7 +399,7 @@ export default function Timer() {
 
   const skipTimer = () => {
     if (sessionState === "work" && sessionId) {
-      endWorkSession(sessionId);
+      endWorkSession(sessionId, false);
     } else if (sessionState === "break") {
       if (currentSession < totalSessions) {
         startSession(currentSession + 1);

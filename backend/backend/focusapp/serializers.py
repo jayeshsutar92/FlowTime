@@ -122,6 +122,7 @@ class StartSessionResponseSerializer(serializers.Serializer):
 
 class SessionTransitionSerializer(serializers.Serializer):
     session_id = serializers.IntegerField(min_value=1)
+    completed = serializers.BooleanField(required=True)
 
 
 class SessionSerializer(serializers.ModelSerializer):

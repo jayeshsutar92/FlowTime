@@ -132,13 +132,13 @@ def should_use_long_break(current_session, total_sessions):
 
 def get_recent_session_metrics(user, limit=5):
     recent_sessions = list(
-        Session.objects.filter(user=user).order_by("-created_at").values("status", "work_duration")[:limit]
+        Session.objects.filter(user=user).order_by("-created_at").values("completed", "work_duration")[:limit]
     )
     if not recent_sessions:
         return None
 
     completed_count = sum(
-        1 for session in recent_sessions if session["status"] == Session.STATUS_COMPLETED
+        1 for session in recent_sessions if session["completed"]
     )
     completion_rate = completed_count / len(recent_sessions)
     avg_session_length = sum(session["work_duration"] for session in recent_sessions) / len(
@@ -255,7 +255,7 @@ def get_session_or_404(session_id, user):
 def complete_running_sessions(user):
     return Session.objects.filter(user=user, status=Session.STATUS_RUNNING).update(
         status=Session.STATUS_COMPLETED,
-        completed=True,
+        completed=False,
     )
 
 
@@ -730,12 +730,14 @@ def end_session(request):
             status.HTTP_400_BAD_REQUEST,
         )
 
-    session.status = Session.STATUS_COMPLETED
-    session.completed = True
-    session.save(update_fields=["status", "completed"])
+    completed = serializer.validated_data["completed"]
+    Session.objects.filter(id=session.id, user=request.user).update(
+        status=Session.STATUS_COMPLETED,
+        completed=completed
+    )
     return success_response(
         "Session Completed",
-        {"session_id": session.id, "status": session.status},
+        {"session_id": session.id, "status": Session.STATUS_COMPLETED},
     )
 
 

@@ -17,6 +17,7 @@ type SessionState = "idle" | "work" | "break";
 
 export default function CustomTimer() {
   const [workDuration, setWorkDuration] = useState(25);
+  const [baseWorkDuration, setBaseWorkDuration] = useState(25);
   const [breakDuration, setBreakDuration] = useState(5);
   const [totalSessions, setTotalSessions] = useState(4);
   const [longBreak, setLongBreak] = useState(15);
@@ -67,13 +68,14 @@ export default function CustomTimer() {
   const handleEndAndLeave = async () => {
     if (sessionState === "work" && sessionId) {
       try {
-        await api.post("/end-session/", { session_id: sessionId });
+        await api.post("/end-session/", { session_id: sessionId, completed: false });
       } catch (e) {}
     }
     setSessionState("idle");
     setIsActive(false);
     setCurrentSession(1);
-    setTimeLeft(workDuration * 60);
+    setWorkDuration(baseWorkDuration);
+    setTimeLeft(baseWorkDuration * 60);
     setBreakStartAt(null);
     setBreakDurationSeconds(null);
     clearBreakState();
@@ -151,6 +153,7 @@ export default function CustomTimer() {
           setSessionId(activeSession.id);
           setSessionState("work");
           setWorkDuration(activeSession.work_duration);
+          setBaseWorkDuration(activeSession.work_duration);
           setBreakDuration(activeSession.break_duration || 5);
           setTotalSessions(activeSession.total_sessions);
           setCurrentSession(activeSession.current_session);
@@ -176,6 +179,7 @@ export default function CustomTimer() {
           setCurrentSession(breakState.currentSession);
           setTotalSessions(breakState.totalSessions);
           setWorkDuration(breakState.workDuration);
+          setBaseWorkDuration(breakState.workDuration);
           setBreakDuration(breakState.breakDuration);
           setLongBreak(breakState.longBreak);
           setTimeLeft(remaining);
@@ -223,7 +227,7 @@ export default function CustomTimer() {
         );
         setTimeLeft(remaining);
         if (remaining <= 0) {
-          endWorkSession(sessionId);
+          endWorkSession(sessionId, true);
         }
       } else if (sessionState === "break" && breakStartAt && breakDurationSeconds) {
         const breakEnd = breakStartAt + breakDurationSeconds * 1000;
@@ -264,9 +268,9 @@ export default function CustomTimer() {
     currentSession,
   ]);
 
-  const endWorkSession = async (id: number) => {
+  const endWorkSession = async (id: number, naturallyCompleted: boolean) => {
     try {
-      await api.post("/end-session/", { session_id: id });
+      await api.post("/end-session/", { session_id: id, completed: naturallyCompleted });
     } catch (e) {}
     playWorkCompleteSound();
     breakSoundPlayedRef.current = false;
@@ -297,13 +301,13 @@ export default function CustomTimer() {
     try {
       setAdjustmentMessage(null);
       const res = await api.post("/start-session/", {
-        work_duration: workDuration,
+        work_duration: baseWorkDuration,
         break_duration: breakDuration,
         total_sessions: totalSessions,
         current_session: targetSession,
       });
       const data = res.data.data;
-      const effectiveWorkDuration = data?.work_duration ?? workDuration;
+      const effectiveWorkDuration = data?.work_duration ?? baseWorkDuration;
       const startedAt = data?.started_at ? new Date(data.started_at).getTime() : Date.now();
       setSessionId(data.session_id);
       setSessionStartAt(startedAt);
@@ -352,10 +356,22 @@ export default function CustomTimer() {
     setIsActive(!isActive);
   };
 
-  const resetTimer = () => {
+  const resetTimer = async () => {
+    if (sessionState === "work" && sessionId) {
+      try {
+        await api.post("/end-session/", { session_id: sessionId, completed: false });
+      } catch (e) {}
+    }
     setIsActive(false);
     if (sessionState === "work") {
-      setTimeLeft(workDuration * 60);
+      setSessionState("idle");
+      setCurrentSession(1);
+      setWorkDuration(baseWorkDuration);
+      setTimeLeft(baseWorkDuration * 60);
+      setBreakStartAt(null);
+      setBreakDurationSeconds(null);
+      clearBreakState();
+      localStorage.removeItem("flowtime_active_timer_type");
     } else if (sessionState === "break") {
       const durationSeconds = breakDuration * 60;
       const startAt = Date.now();
@@ -376,7 +392,7 @@ export default function CustomTimer() {
 
   const skipTimer = () => {
     if (sessionState === "work" && sessionId) {
-      endWorkSession(sessionId);
+      endWorkSession(sessionId, false);
     } else if (sessionState === "break") {
       if (currentSession < totalSessions) {
         startSession(currentSession + 1);
@@ -384,7 +400,8 @@ export default function CustomTimer() {
         setSessionState("idle");
         setIsActive(false);
         setCurrentSession(1);
-        setTimeLeft(workDuration * 60);
+        setWorkDuration(baseWorkDuration);
+        setTimeLeft(baseWorkDuration * 60);
         setBreakStartAt(null);
         setBreakDurationSeconds(null);
         clearBreakState();
@@ -412,6 +429,7 @@ export default function CustomTimer() {
 
   const usePreset = (p: Preset) => {
     setWorkDuration(p.work_duration);
+    setBaseWorkDuration(p.work_duration);
     setBreakDuration(p.short_break);
     setLongBreak(p.long_break);
     setTimeLeft(p.work_duration * 60);
@@ -490,8 +508,10 @@ export default function CustomTimer() {
                   type="number"
                   value={workDuration}
                   onChange={(e) => {
-                    setWorkDuration(Number(e.target.value));
-                    if (sessionState === "idle") setTimeLeft(Number(e.target.value) * 60);
+                    const val = Number(e.target.value);
+                    setWorkDuration(val);
+                    setBaseWorkDuration(val);
+                    if (sessionState === "idle") setTimeLeft(val * 60);
                   }}
                   disabled={sessionState !== "idle"}
                   className="w-full bg-[#0F141F] border border-white/5 rounded-xl px-4 py-3 text-white outline-none focus:border-[#2563EB]/50 transition-colors"
