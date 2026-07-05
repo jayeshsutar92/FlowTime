@@ -95,6 +95,7 @@ class StartSessionSerializer(serializers.Serializer):
     break_duration = serializers.IntegerField(min_value=1)
     total_sessions = serializers.IntegerField(min_value=1)
     current_session = serializers.IntegerField(min_value=1, default=1)
+    timer_type = serializers.CharField(required=False, default="default")
 
     def validate(self, attrs):
         if attrs["current_session"] > attrs["total_sessions"]:

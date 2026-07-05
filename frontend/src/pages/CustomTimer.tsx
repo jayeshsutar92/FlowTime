@@ -16,11 +16,27 @@ type Preset = {
 type SessionState = "idle" | "work" | "break";
 
 export default function CustomTimer() {
-  const [workDuration, setWorkDuration] = useState(25);
-  const [baseWorkDuration, setBaseWorkDuration] = useState(25);
-  const [breakDuration, setBreakDuration] = useState(5);
-  const [totalSessions, setTotalSessions] = useState(4);
-  const [longBreak, setLongBreak] = useState(15);
+  const [baseWorkDuration, setBaseWorkDuration] = useState(() => {
+    const saved = localStorage.getItem("flowtime_custom_base_work_duration");
+    return saved ? Number(saved) : 25;
+  });
+  const [baseBreakDuration, setBaseBreakDuration] = useState(() => {
+    const saved = localStorage.getItem("flowtime_custom_base_break_duration");
+    return saved ? Number(saved) : 5;
+  });
+  const [baseTotalSessions, setBaseTotalSessions] = useState(() => {
+    const saved = localStorage.getItem("flowtime_custom_base_total_sessions");
+    return saved ? Number(saved) : 4;
+  });
+  const [baseLongBreak, setBaseLongBreak] = useState(() => {
+    const saved = localStorage.getItem("flowtime_custom_base_long_break");
+    return saved ? Number(saved) : 15;
+  });
+
+  const [workDuration, setWorkDuration] = useState(baseWorkDuration);
+  const [breakDuration, setBreakDuration] = useState(baseBreakDuration);
+  const [totalSessions, setTotalSessions] = useState(baseTotalSessions);
+  const [longBreak, setLongBreak] = useState(baseLongBreak);
   const [currentSession, setCurrentSession] = useState(1);
 
   const [sessionState, setSessionState] = useState<SessionState>("idle");
@@ -153,7 +169,6 @@ export default function CustomTimer() {
           setSessionId(activeSession.id);
           setSessionState("work");
           setWorkDuration(activeSession.work_duration);
-          setBaseWorkDuration(activeSession.work_duration);
           setBreakDuration(activeSession.break_duration || 5);
           setTotalSessions(activeSession.total_sessions);
           setCurrentSession(activeSession.current_session);
@@ -179,7 +194,6 @@ export default function CustomTimer() {
           setCurrentSession(breakState.currentSession);
           setTotalSessions(breakState.totalSessions);
           setWorkDuration(breakState.workDuration);
-          setBaseWorkDuration(breakState.workDuration);
           setBreakDuration(breakState.breakDuration);
           setLongBreak(breakState.longBreak);
           setTimeLeft(remaining);
@@ -302,9 +316,10 @@ export default function CustomTimer() {
       setAdjustmentMessage(null);
       const res = await api.post("/start-session/", {
         work_duration: baseWorkDuration,
-        break_duration: breakDuration,
-        total_sessions: totalSessions,
+        break_duration: baseBreakDuration,
+        total_sessions: baseTotalSessions,
         current_session: targetSession,
+        timer_type: "custom",
       });
       const data = res.data.data;
       const effectiveWorkDuration = data?.work_duration ?? baseWorkDuration;
@@ -367,6 +382,9 @@ export default function CustomTimer() {
       setSessionState("idle");
       setCurrentSession(1);
       setWorkDuration(baseWorkDuration);
+      setBreakDuration(baseBreakDuration);
+      setTotalSessions(baseTotalSessions);
+      setLongBreak(baseLongBreak);
       setTimeLeft(baseWorkDuration * 60);
       setBreakStartAt(null);
       setBreakDurationSeconds(null);
@@ -401,6 +419,9 @@ export default function CustomTimer() {
         setIsActive(false);
         setCurrentSession(1);
         setWorkDuration(baseWorkDuration);
+        setBreakDuration(baseBreakDuration);
+        setTotalSessions(baseTotalSessions);
+        setLongBreak(baseLongBreak);
         setTimeLeft(baseWorkDuration * 60);
         setBreakStartAt(null);
         setBreakDurationSeconds(null);
@@ -430,8 +451,16 @@ export default function CustomTimer() {
   const usePreset = (p: Preset) => {
     setWorkDuration(p.work_duration);
     setBaseWorkDuration(p.work_duration);
+    localStorage.setItem("flowtime_custom_base_work_duration", String(p.work_duration));
+
     setBreakDuration(p.short_break);
+    setBaseBreakDuration(p.short_break);
+    localStorage.setItem("flowtime_custom_base_break_duration", String(p.short_break));
+
     setLongBreak(p.long_break);
+    setBaseLongBreak(p.long_break);
+    localStorage.setItem("flowtime_custom_base_long_break", String(p.long_break));
+
     setTimeLeft(p.work_duration * 60);
   };
 
@@ -511,6 +540,7 @@ export default function CustomTimer() {
                     const val = Number(e.target.value);
                     setWorkDuration(val);
                     setBaseWorkDuration(val);
+                    localStorage.setItem("flowtime_custom_base_work_duration", String(val));
                     if (sessionState === "idle") setTimeLeft(val * 60);
                   }}
                   disabled={sessionState !== "idle"}
@@ -523,7 +553,12 @@ export default function CustomTimer() {
                 <input
                   type="number"
                   value={breakDuration}
-                  onChange={(e) => setBreakDuration(Number(e.target.value))}
+                  onChange={(e) => {
+                    const val = Number(e.target.value);
+                    setBreakDuration(val);
+                    setBaseBreakDuration(val);
+                    localStorage.setItem("flowtime_custom_base_break_duration", String(val));
+                  }}
                   disabled={sessionState !== "idle"}
                   className="w-full bg-[#0F141F] border border-white/5 rounded-xl px-4 py-3 text-white outline-none focus:border-[#2563EB]/50 transition-colors"
                 />
@@ -535,7 +570,12 @@ export default function CustomTimer() {
                   <input
                     type="number"
                     value={totalSessions}
-                    onChange={(e) => setTotalSessions(Number(e.target.value))}
+                    onChange={(e) => {
+                      const val = Number(e.target.value);
+                      setTotalSessions(val);
+                      setBaseTotalSessions(val);
+                      localStorage.setItem("flowtime_custom_base_total_sessions", String(val));
+                    }}
                     disabled={sessionState !== "idle"}
                     className="w-full bg-[#0F141F] border border-white/5 rounded-xl px-4 py-3 text-white outline-none focus:border-[#2563EB]/50 transition-colors"
                   />
@@ -545,7 +585,12 @@ export default function CustomTimer() {
                   <input
                     type="number"
                     value={longBreak}
-                    onChange={(e) => setLongBreak(Number(e.target.value))}
+                    onChange={(e) => {
+                      const val = Number(e.target.value);
+                      setLongBreak(val);
+                      setBaseLongBreak(val);
+                      localStorage.setItem("flowtime_custom_base_long_break", String(val));
+                    }}
                     disabled={sessionState !== "idle"}
                     className="w-full bg-[#0F141F] border border-white/5 rounded-xl px-4 py-3 text-white outline-none focus:border-[#2563EB]/50 transition-colors"
                   />

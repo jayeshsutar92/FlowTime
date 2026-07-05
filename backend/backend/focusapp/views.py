@@ -132,7 +132,10 @@ def should_use_long_break(current_session, total_sessions):
 
 def get_recent_session_metrics(user, limit=5):
     recent_sessions = list(
-        Session.objects.filter(user=user).order_by("-created_at").values("completed", "work_duration")[:limit]
+        Session.objects.filter(
+            user=user,
+            total_sessions=4,
+        ).order_by("-created_at").values("completed", "work_duration")[:limit]
     )
     if not recent_sessions:
         return None
@@ -557,13 +560,23 @@ def start_session(request):
             serializer.errors,
         )
 
+    timer_type = serializer.validated_data.get("timer_type", "default")
+
     complete_running_sessions(request.user)
     adaptive_break_factor = get_adaptive_break_factor(request.user)
-    adjusted_session = adjust_session_durations(
-        request.user,
-        serializer.validated_data["work_duration"],
-        serializer.validated_data["break_duration"],
-    )
+    if timer_type == "custom":
+        adjusted_session = {
+            "work_duration": serializer.validated_data["work_duration"],
+            "break_duration": serializer.validated_data["break_duration"],
+            "adjusted": False,
+            "adjustment_reason": None,
+        }
+    else:
+        adjusted_session = adjust_session_durations(
+            request.user,
+            serializer.validated_data["work_duration"],
+            serializer.validated_data["break_duration"],
+        )
 
     session = Session.objects.create(
         user=request.user,

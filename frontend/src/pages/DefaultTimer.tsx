@@ -309,6 +309,7 @@ export default function Timer() {
         break_duration: 5,
         total_sessions: 4,
         current_session: targetSession,
+        timer_type: "default",
       });
       const data = res.data.data;
       const effectiveWorkDuration = data?.work_duration ?? 25;
