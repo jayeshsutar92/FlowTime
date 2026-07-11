@@ -112,8 +112,16 @@ class OTPVerification(models.Model):
 
 
 class MusicTrack(models.Model):
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="music_tracks",
+        null=True,
+        blank=True,
+    )
     name = models.CharField(max_length=255)
     file_path = models.CharField(max_length=500, blank=True, null=True)
+    audio_file = models.FileField(upload_to="music_tracks/", null=True, blank=True)
     duration = models.IntegerField(blank=True, null=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
@@ -122,3 +130,59 @@ class MusicTrack(models.Model):
 
     def __str__(self):
         return self.name
+
+
+class Playlist(models.Model):
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="playlists",
+    )
+    name = models.CharField(max_length=255)
+    tracks = models.ManyToManyField(
+        MusicTrack,
+        through="PlaylistTrack",
+        related_name="playlists",
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-created_at", "-id"]
+        unique_together = ["user", "name"]
+
+    def __str__(self):
+        return f"{self.user.username}:{self.name}"
+
+
+class PlaylistTrack(models.Model):
+    playlist = models.ForeignKey(Playlist, on_delete=models.CASCADE)
+    track = models.ForeignKey(MusicTrack, on_delete=models.CASCADE)
+    position = models.PositiveIntegerField()
+
+    class Meta:
+        ordering = ["position"]
+        unique_together = ["playlist", "track"]
+
+    def __str__(self):
+        return f"{self.playlist.name} - {self.track.name} at {self.position}"
+
+
+class FavoriteTrack(models.Model):
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="favorite_tracks",
+    )
+    track = models.ForeignKey(
+        MusicTrack,
+        on_delete=models.CASCADE,
+        related_name="favorited_by",
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+        unique_together = ["user", "track"]
+
+    def __str__(self):
+        return f"{self.user.username} favorited {self.track.name}"

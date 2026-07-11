@@ -18,6 +18,9 @@ import Admin from "./pages/Admin";
 import TopNav from "./components/TopNav";
 import RouteErrorBoundary from "./components/RouteErrorBoundary";
 
+import { MusicProvider } from "./contexts/MusicContext";
+import GlobalPlayer from "./components/GlobalPlayer";
+
 const ProtectedRoute = ({ children }: { children: React.ReactNode }) => {
   const { isAuthenticated } = useAuth();
   if (!isAuthenticated) return <Navigate to="/auth" />;
@@ -38,7 +41,7 @@ const RootRoutes = () => (
       path="/*"
       element={
         <ProtectedRoute>
-          <div className="min-h-screen bg-background relative overflow-hidden flex flex-col">
+          <div className="min-h-screen bg-background relative overflow-hidden flex flex-col pb-24">
             {/* Background Ambient Glows */}
             <div className="absolute top-[-20%] left-[-10%] w-[600px] h-[600px] bg-primary/10 rounded-full blur-[120px] pointer-events-none z-0"></div>
             <div className="absolute bottom-[-20%] right-[-10%] w-[500px] h-[500px] bg-secondary/10 rounded-full blur-[100px] pointer-events-none z-0"></div>
@@ -58,6 +61,7 @@ const RootRoutes = () => (
                 </Routes>
               </RouteErrorBoundary>
             </div>
+            <GlobalPlayer />
           </div>
         </ProtectedRoute>
       }
@@ -70,7 +74,9 @@ const router = createBrowserRouter([{ path: "*", element: <RootRoutes /> }]);
 export default function App() {
   return (
     <AuthProvider>
-      <RouterProvider router={router} />
+      <MusicProvider>
+        <RouterProvider router={router} />
+      </MusicProvider>
     </AuthProvider>
   );
 }

@@ -8,7 +8,7 @@ from django.contrib.auth import get_user_model, login
 from django.contrib.auth.hashers import check_password, make_password
 from django.core.mail import send_mail
 from django.db import IntegrityError
-from django.db.models import Avg, Count, Sum
+from django.db.models import Avg, Count, Sum, Q
 from django.db.models.functions import ExtractHour, TruncDate
 from django.conf import settings
 from django.utils import timezone
@@ -22,7 +22,7 @@ from rest_framework.response import Response
 from rest_framework.decorators import api_view, permission_classes, throttle_classes
 from rest_framework.throttling import ScopedRateThrottle
 
-from .models import MusicTrack, OTPVerification, Preset, Session
+from .models import MusicTrack, OTPVerification, Preset, Session, Playlist, PlaylistTrack, FavoriteTrack
 from .serializers import (
     AdminUserSerializer,
     ForgotPasswordSerializer,
@@ -36,6 +36,9 @@ from .serializers import (
     StartSessionSerializer,
     StartSessionResponseSerializer,
     MusicTrackSerializer,
+    PlaylistSerializer,
+    PlaylistTrackSerializer,
+    FavoriteTrackSerializer,
 )
 
 logger = logging.getLogger(__name__)
@@ -77,7 +80,6 @@ def simple_error_response(message, details=None, status_code=status.HTTP_400_BAD
 
 
 ALLOWED_AUDIO_EXTENSIONS = {".mp3", ".wav", ".ogg", ".aac", ".flac", ".m4a"}
-MUSIC_QUEUE = []
 
 
 def parse_days_filter(days_value):
@@ -1071,40 +1073,158 @@ def get_music_track(track_id):
         return None
 
 
+def get_user_queue_from_cache(user_id):
+    key = f"music:queue:{user_id}"
+    queue = cache.get(key)
+    if queue is None:
+        queue = []
+    return queue
+
+
+def set_user_queue_in_cache(user_id, queue):
+    key = f"music:queue:{user_id}"
+    cache.set(key, queue, timeout=None)
+
+
+def get_user_playback_state_from_cache(user_id):
+    key = f"music:state:{user_id}"
+    state = cache.get(key)
+    if state is None:
+        state = {
+            "current_index": 0,
+            "shuffle": False,
+            "repeat": "off",
+            "is_playing": False,
+            "progress_seconds": 0,
+            "shuffled_order": [],
+        }
+    return state
+
+
+def set_user_playback_state_in_cache(user_id, state):
+    key = f"music:state:{user_id}"
+    cache.set(key, state, timeout=None)
+
+
+def resolve_current_track_id(user_id):
+    queue = get_user_queue_from_cache(user_id)
+    if not queue:
+        return None
+    state = get_user_playback_state_from_cache(user_id)
+    current_index = state.get("current_index", 0)
+    shuffle = state.get("shuffle", False)
+
+    if shuffle:
+        shuffled_order = state.get("shuffled_order", [])
+        if len(shuffled_order) != len(queue):
+            shuffled_order = list(range(len(queue)))
+            random.shuffle(shuffled_order)
+            state["shuffled_order"] = shuffled_order
+            set_user_playback_state_in_cache(user_id, state)
+
+        if 0 <= current_index < len(shuffled_order):
+            actual_index = shuffled_order[current_index]
+            if 0 <= actual_index < len(queue):
+                return queue[actual_index]
+    else:
+        if 0 <= current_index < len(queue):
+            return queue[current_index]
+    return None
+
+
+def advance_playback(user_id, direction=1):
+    queue = get_user_queue_from_cache(user_id)
+    if not queue:
+        return None
+    state = get_user_playback_state_from_cache(user_id)
+    current_index = state.get("current_index", 0)
+    repeat = state.get("repeat", "off")
+    shuffle = state.get("shuffle", False)
+
+    total_tracks = len(queue)
+
+    if repeat == "track" and direction == 1:
+        state["progress_seconds"] = 0
+        set_user_playback_state_in_cache(user_id, state)
+        return resolve_current_track_id(user_id)
+
+    if shuffle:
+        shuffled_order = state.get("shuffled_order", [])
+        if len(shuffled_order) != total_tracks:
+            shuffled_order = list(range(total_tracks))
+            random.shuffle(shuffled_order)
+            state["shuffled_order"] = shuffled_order
+            set_user_playback_state_in_cache(user_id, state)
+        order_len = len(shuffled_order)
+    else:
+        order_len = total_tracks
+
+    if direction == 1:
+        new_index = current_index + 1
+        if new_index >= order_len:
+            if repeat == "queue":
+                new_index = 0
+            else:
+                new_index = order_len - 1
+                state["is_playing"] = False
+    else:
+        new_index = current_index - 1
+        if new_index < 0:
+            if repeat == "queue":
+                new_index = order_len - 1
+            else:
+                new_index = 0
+
+    state["current_index"] = new_index
+    state["progress_seconds"] = 0
+    set_user_playback_state_in_cache(user_id, state)
+    return resolve_current_track_id(user_id)
+
+
 @api_view(["POST"])
 @permission_classes([IsAuthenticated])
 def upload_music(request):
-    uploaded_file = request.FILES.get("file")
-    name = request.data.get("name")
+    uploaded_files = request.FILES.getlist("file")
+    if not uploaded_files:
+        uploaded_file = request.FILES.get("file")
+        if uploaded_file:
+            uploaded_files = [uploaded_file]
 
-    if uploaded_file is not None:
-        _, ext = os.path.splitext(uploaded_file.name)
-        if ext.lower() not in ALLOWED_AUDIO_EXTENSIONS:
-            return simple_error_response(
-                "Unsupported file type.",
-                {"allowed_extensions": sorted(ALLOWED_AUDIO_EXTENSIONS)},
-                status.HTTP_400_BAD_REQUEST,
-            )
-        if not name:
-            name = uploaded_file.name
-
-    if not name:
-        return simple_error_response("Name is required when no file is provided.")
+    if not uploaded_files:
+        return simple_error_response("No files provided.")
 
     duration = parse_optional_int(request.data.get("duration"), "duration")
     if isinstance(duration, str):
         return simple_error_response(duration)
 
-    file_path = uploaded_file.name if uploaded_file is not None else None
-    track = MusicTrack.objects.create(
-        name=name,
-        file_path=file_path,
-        duration=duration,
-    )
+    MAX_FILE_SIZE = 20 * 1024 * 1024  # 20MB
 
+    for f in uploaded_files:
+        _, ext = os.path.splitext(f.name)
+        if ext.lower() not in ALLOWED_AUDIO_EXTENSIONS:
+            return simple_error_response(
+                f"Unsupported file type for {f.name}.",
+                {"allowed_extensions": sorted(ALLOWED_AUDIO_EXTENSIONS)},
+            )
+        if f.size > MAX_FILE_SIZE:
+            return simple_error_response(f"File {f.name} exceeds the 20MB limit.")
+
+    created_tracks = []
+    for f in uploaded_files:
+        name = os.path.splitext(f.name)[0]
+        track = MusicTrack.objects.create(
+            user=request.user,
+            name=name,
+            file_path=f.name,
+            audio_file=f,
+            duration=duration or 0,
+        )
+        created_tracks.append(track)
+
+    serializer = MusicTrackSerializer(created_tracks, many=True, context={"request": request})
     return success_response(
-        "Track metadata stored",
-        {"track_id": track.id, "name": track.name},
+        "Tracks uploaded successfully",
+        serializer.data,
         status_code=status.HTTP_201_CREATED,
     )
 
@@ -1112,46 +1232,296 @@ def upload_music(request):
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
 def list_music_tracks(request):
-    tracks = MusicTrack.objects.all()
-    serializer = MusicTrackSerializer(tracks, many=True)
+    tracks = MusicTrack.objects.filter(Q(user=request.user) | Q(user__isnull=True)).order_by("-created_at")
+    serializer = MusicTrackSerializer(tracks, many=True, context={"request": request})
     return success_response("Tracks fetched", serializer.data)
 
 
 @api_view(["GET", "POST"])
 @permission_classes([IsAuthenticated])
-def music_queue(request):
+def playlists_collection(request):
     if request.method == "GET":
-        if not MUSIC_QUEUE:
-            return success_response("Queue fetched", [])
+        playlists = Playlist.objects.filter(user=request.user).order_by("-created_at")
+        serializer = PlaylistSerializer(playlists, many=True, context={"request": request})
+        return success_response("Playlists fetched", serializer.data)
 
-        unique_ids = list(dict.fromkeys(MUSIC_QUEUE))
-        tracks = MusicTrack.objects.filter(id__in=unique_ids)
-        track_map = {track.id: track for track in tracks}
-        ordered_tracks = [track_map[item_id] for item_id in MUSIC_QUEUE if item_id in track_map]
-        serializer = MusicTrackSerializer(ordered_tracks, many=True)
-        return success_response("Queue fetched", serializer.data)
+    name = request.data.get("name")
+    if not name:
+        return simple_error_response("Name is required.")
 
-    track_id = request.data.get("track_id")
-    track_id = parse_optional_int(track_id, "track_id")
-    if isinstance(track_id, str) or track_id is None:
-        return simple_error_response("track_id is required and must be an integer.")
+    try:
+        playlist = Playlist.objects.create(user=request.user, name=name)
+    except IntegrityError:
+        return simple_error_response("Playlist with this name already exists.")
 
-    track = get_music_track(track_id)
-    if track is None:
-        return simple_error_response("Invalid track_id.", status_code=status.HTTP_404_NOT_FOUND)
+    track_ids = request.data.get("track_ids", [])
+    if isinstance(track_ids, list):
+        for idx, track_id in enumerate(track_ids):
+            track = get_music_track(track_id)
+            if track:
+                PlaylistTrack.objects.create(playlist=playlist, track=track, position=idx)
 
-    MUSIC_QUEUE.append(track.id)
-    return success_response("Track queued", {"track_id": track.id})
+    serializer = PlaylistSerializer(playlist, context={"request": request})
+    return success_response("Playlist created", serializer.data, status_code=status.HTTP_201_CREATED)
 
 
-@api_view(["DELETE"])
+@api_view(["GET", "PUT", "DELETE"])
 @permission_classes([IsAuthenticated])
-def delete_music_queue_item(request, id):
-    if id not in MUSIC_QUEUE:
-        return simple_error_response("Track not in queue.", status_code=status.HTTP_404_NOT_FOUND)
+def playlist_detail(request, id):
+    try:
+        playlist = Playlist.objects.get(id=id, user=request.user)
+    except Playlist.DoesNotExist:
+        return error_response("Playlist not found", status.HTTP_404_NOT_FOUND)
 
-    MUSIC_QUEUE.remove(id)
-    return success_response("Track removed", {"track_id": id})
+    if request.method == "GET":
+        serializer = PlaylistSerializer(playlist, context={"request": request})
+        return success_response("Playlist fetched", serializer.data)
+
+    elif request.method == "PUT":
+        name = request.data.get("name")
+        if name:
+            playlist.name = name
+            try:
+                playlist.save()
+            except IntegrityError:
+                return simple_error_response("Playlist name already exists.")
+
+        track_ids = request.data.get("track_ids")
+        if track_ids is not None and isinstance(track_ids, list):
+            PlaylistTrack.objects.filter(playlist=playlist).delete()
+            for idx, track_id in enumerate(track_ids):
+                track = get_music_track(track_id)
+                if track:
+                    PlaylistTrack.objects.create(playlist=playlist, track=track, position=idx)
+
+        serializer = PlaylistSerializer(playlist, context={"request": request})
+        return success_response("Playlist updated", serializer.data)
+
+    elif request.method == "DELETE":
+        playlist.delete()
+        return success_response("Playlist deleted", None)
+
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def favorites_collection(request):
+    favorites = FavoriteTrack.objects.filter(user=request.user).order_by("-created_at")
+    serializer = FavoriteTrackSerializer(favorites, many=True, context={"request": request})
+    return success_response("Favorites fetched", serializer.data)
+
+
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
+def add_favorite(request):
+    track_id = request.data.get("track_id")
+    track = get_music_track(track_id)
+    if not track:
+        return error_response("Track not found", status.HTTP_404_NOT_FOUND)
+
+    FavoriteTrack.objects.get_or_create(user=request.user, track=track)
+    return success_response("Added to favorites", {"track_id": track.id})
+
+
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
+def remove_favorite(request):
+    track_id = request.data.get("track_id")
+    FavoriteTrack.objects.filter(user=request.user, track_id=track_id).delete()
+    return success_response("Removed from favorites", {"track_id": track_id})
+
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def get_queue(request):
+    queue = get_user_queue_from_cache(request.user.id)
+    tracks = MusicTrack.objects.filter(id__in=queue)
+    track_map = {t.id: t for t in tracks}
+    ordered_tracks = [track_map[tid] for tid in queue if tid in track_map]
+    serializer = MusicTrackSerializer(ordered_tracks, many=True, context={"request": request})
+    return success_response("Queue fetched", serializer.data)
+
+
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
+def add_to_queue(request):
+    track_id = request.data.get("track_id")
+    playlist_id = request.data.get("playlist_id")
+
+    queue = get_user_queue_from_cache(request.user.id)
+    added_ids = []
+
+    if track_id:
+        track = get_music_track(track_id)
+        if track:
+            queue.append(track.id)
+            added_ids.append(track.id)
+    elif playlist_id:
+        try:
+            playlist = Playlist.objects.get(id=playlist_id, user=request.user)
+            playlist_tracks = PlaylistTrack.objects.filter(playlist=playlist).order_by("position")
+            for pt in playlist_tracks:
+                queue.append(pt.track.id)
+                added_ids.append(pt.track.id)
+        except Playlist.DoesNotExist:
+            return error_response("Playlist not found", status.HTTP_404_NOT_FOUND)
+
+    set_user_queue_in_cache(request.user.id, queue)
+
+    state = get_user_playback_state_from_cache(request.user.id)
+    state["shuffled_order"] = []
+    set_user_playback_state_in_cache(request.user.id, state)
+
+    return success_response("Tracks added to queue", {"added_track_ids": added_ids})
+
+
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
+def remove_from_queue(request):
+    position = request.data.get("position")
+    if position is None:
+        return simple_error_response("position parameter is required.")
+
+    try:
+        position = int(position)
+    except (TypeError, ValueError):
+        return simple_error_response("position must be an integer.")
+
+    queue = get_user_queue_from_cache(request.user.id)
+    if not (0 <= position < len(queue)):
+        return simple_error_response("Invalid position.")
+
+    removed_id = queue.pop(position)
+    set_user_queue_in_cache(request.user.id, queue)
+
+    state = get_user_playback_state_from_cache(request.user.id)
+    state["shuffled_order"] = []
+    if state["current_index"] >= len(queue) and len(queue) > 0:
+        state["current_index"] = len(queue) - 1
+    set_user_playback_state_in_cache(request.user.id, state)
+
+    return success_response("Track removed from queue", {"removed_track_id": removed_id})
+
+
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
+def reorder_queue(request):
+    old_pos = request.data.get("old_position")
+    new_pos = request.data.get("new_position")
+
+    if old_pos is None or new_pos is None:
+        return simple_error_response("old_position and new_position are required.")
+
+    try:
+        old_pos = int(old_pos)
+        new_pos = int(new_pos)
+    except (TypeError, ValueError):
+        return simple_error_response("positions must be integers.")
+
+    queue = get_user_queue_from_cache(request.user.id)
+    if not (0 <= old_pos < len(queue)) or not (0 <= new_pos < len(queue)):
+        return simple_error_response("Invalid positions.")
+
+    track_id = queue.pop(old_pos)
+    queue.insert(new_pos, track_id)
+    set_user_queue_in_cache(request.user.id, queue)
+
+    state = get_user_playback_state_from_cache(request.user.id)
+    state["shuffled_order"] = []
+    if state["current_index"] == old_pos:
+        state["current_index"] = new_pos
+    set_user_playback_state_in_cache(request.user.id, state)
+
+    return success_response("Queue reordered", None)
+
+
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
+def play_next(request):
+    track_id = advance_playback(request.user.id, direction=1)
+    if track_id is None:
+        return success_response("Playback reached the end of queue", None)
+    track = get_music_track(track_id)
+    serializer = MusicTrackSerializer(track, context={"request": request})
+    return success_response("Skipped to next track", serializer.data)
+
+
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
+def play_previous(request):
+    track_id = advance_playback(request.user.id, direction=-1)
+    if track_id is None:
+        return success_response("Queue is empty", None)
+    track = get_music_track(track_id)
+    serializer = MusicTrackSerializer(track, context={"request": request})
+    return success_response("Skipped to previous track", serializer.data)
+
+
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
+def toggle_shuffle(request):
+    state = get_user_playback_state_from_cache(request.user.id)
+    state["shuffle"] = not state.get("shuffle", False)
+    state["shuffled_order"] = []
+    set_user_playback_state_in_cache(request.user.id, state)
+    return success_response("Shuffle mode toggled", {"shuffle": state["shuffle"]})
+
+
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
+def set_repeat(request):
+    mode = request.data.get("mode")
+    if mode not in ("off", "track", "queue"):
+        return simple_error_response("Invalid repeat mode. Use: 'off', 'track', or 'queue'.")
+    state = get_user_playback_state_from_cache(request.user.id)
+    state["repeat"] = mode
+    set_user_playback_state_in_cache(request.user.id, state)
+    return success_response("Repeat mode updated", {"repeat": mode})
+
+
+@api_view(["GET", "POST"])
+@permission_classes([IsAuthenticated])
+def playback_state(request):
+    state = get_user_playback_state_from_cache(request.user.id)
+
+    if request.method == "POST":
+        is_playing = request.data.get("is_playing")
+        progress = request.data.get("progress_seconds")
+        current_index = request.data.get("current_index")
+
+        if is_playing is not None:
+            state["is_playing"] = bool(is_playing)
+        if progress is not None:
+            try:
+                state["progress_seconds"] = int(progress)
+            except (TypeError, ValueError):
+                return simple_error_response("progress_seconds must be an integer.")
+        if current_index is not None:
+            try:
+                current_index = int(current_index)
+                queue = get_user_queue_from_cache(request.user.id)
+                if 0 <= current_index < len(queue):
+                    state["current_index"] = current_index
+            except (TypeError, ValueError):
+                return simple_error_response("current_index must be an integer.")
+
+        set_user_playback_state_in_cache(request.user.id, state)
+
+    track_id = resolve_current_track_id(request.user.id)
+    track_data = None
+    if track_id:
+        track = get_music_track(track_id)
+        if track:
+            track_data = MusicTrackSerializer(track, context={"request": request}).data
+
+    payload = {
+        "current_index": state.get("current_index", 0),
+        "shuffle": state.get("shuffle", False),
+        "repeat": state.get("repeat", "off"),
+        "is_playing": state.get("is_playing", False),
+        "progress_seconds": state.get("progress_seconds", 0),
+        "current_track": track_data,
+    }
+    return success_response("Playback state", payload)
 
 
 # ---------------------------------------------------------------------------

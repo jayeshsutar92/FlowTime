@@ -4,7 +4,65 @@ from django.core.exceptions import ValidationError as DjangoValidationError
 from django.db.models import Q
 from rest_framework import serializers
 
-from .models import MusicTrack, Preset, Session
+from .models import MusicTrack, Preset, Session, Playlist, PlaylistTrack, FavoriteTrack
+
+
+class MusicTrackSerializer(serializers.ModelSerializer):
+    audio_url = serializers.SerializerMethodField()
+
+    class Meta:
+        model = MusicTrack
+        fields = ["id", "name", "file_path", "audio_file", "audio_url", "duration", "created_at"]
+        read_only_fields = ["id", "created_at"]
+
+    def get_audio_url(self, obj):
+        request = self.context.get("request")
+        if obj.audio_file:
+            url = obj.audio_file.url
+            if request is not None:
+                return request.build_absolute_uri(url)
+            return url
+        return None
+
+
+class PlaylistTrackSerializer(serializers.ModelSerializer):
+    track = MusicTrackSerializer(read_only=True)
+    track_id = serializers.PrimaryKeyRelatedField(
+        queryset=MusicTrack.objects.all(),
+        source="track",
+        write_only=True,
+    )
+
+    class Meta:
+        model = PlaylistTrack
+        fields = ["track", "track_id", "position"]
+
+
+class PlaylistSerializer(serializers.ModelSerializer):
+    tracks = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Playlist
+        fields = ["id", "name", "tracks", "created_at"]
+        read_only_fields = ["id", "created_at"]
+
+    def get_tracks(self, obj):
+        playlist_tracks = PlaylistTrack.objects.filter(playlist=obj).order_by("position")
+        return PlaylistTrackSerializer(playlist_tracks, many=True, context=self.context).data
+
+
+class FavoriteTrackSerializer(serializers.ModelSerializer):
+    track = MusicTrackSerializer(read_only=True)
+    track_id = serializers.PrimaryKeyRelatedField(
+        queryset=MusicTrack.objects.all(),
+        source="track",
+        write_only=True,
+    )
+
+    class Meta:
+        model = FavoriteTrack
+        fields = ["id", "track", "track_id", "created_at"]
+        read_only_fields = ["id", "created_at"]
 
 User = get_user_model()
 
@@ -175,12 +233,6 @@ class PresetCreateSerializer(serializers.Serializer):
         allow_null=True,
     )
 
-
-class MusicTrackSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = MusicTrack
-        fields = ["id", "name", "file_path", "duration", "created_at"]
-        read_only_fields = fields
 
 
 class AdminUserSerializer(serializers.Serializer):
