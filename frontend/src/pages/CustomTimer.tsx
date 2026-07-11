@@ -142,15 +142,9 @@ export default function CustomTimer() {
     fetchPresets();
     fetchStats();
 
-    const activeTimerType = localStorage.getItem("flowtime_active_timer_type");
-    if (activeTimerType !== "custom") {
-      clearBreakState();
-      return;
-    }
-
     api.get("/sessions/").then((res) => {
-      const running = res.data.data.find((s: any) => s.status === "running");
-      const paused = res.data.data.find((s: any) => s.status === "paused");
+      const running = res.data.data.find((s: any) => s.status === "running" && s.timer_type === "custom");
+      const paused = res.data.data.find((s: any) => s.status === "paused" && s.timer_type === "custom");
       const activeSession = running || paused;
 
       if (activeSession) {

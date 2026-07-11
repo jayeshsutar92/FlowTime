@@ -126,6 +126,10 @@ class SessionTransitionSerializer(serializers.Serializer):
     completed = serializers.BooleanField(required=True)
 
 
+class SessionPauseResumeSerializer(serializers.Serializer):
+    session_id = serializers.IntegerField(min_value=1)
+
+
 class SessionSerializer(serializers.ModelSerializer):
     class Meta:
         model = Session
@@ -140,6 +144,7 @@ class SessionSerializer(serializers.ModelSerializer):
             "paused_at",
             "status",
             "created_at",
+            "timer_type",
         ]
         read_only_fields = fields
 

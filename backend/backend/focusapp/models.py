@@ -31,6 +31,10 @@ class Session(models.Model):
         choices=STATUS_CHOICES,
         default=STATUS_RUNNING,
     )
+    timer_type = models.CharField(
+        max_length=20,
+        default="default",
+    )
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:

@@ -29,6 +29,7 @@ from .serializers import (
     ResetPasswordSerializer,
     SessionSerializer,
     SessionTransitionSerializer,
+    SessionPauseResumeSerializer,
     SignupSerializer,
     StartSessionSerializer,
     StartSessionResponseSerializer,
@@ -134,7 +135,7 @@ def get_recent_session_metrics(user, limit=5):
     recent_sessions = list(
         Session.objects.filter(
             user=user,
-            total_sessions=4,
+            timer_type="default",
         ).order_by("-created_at").values("completed", "work_duration")[:limit]
     )
     if not recent_sessions:
@@ -255,8 +256,8 @@ def get_session_or_404(session_id, user):
         return None
 
 
-def complete_running_sessions(user):
-    return Session.objects.filter(user=user, status=Session.STATUS_RUNNING).update(
+def complete_running_sessions(user, timer_type="default"):
+    return Session.objects.filter(user=user, status=Session.STATUS_RUNNING, timer_type=timer_type).update(
         status=Session.STATUS_COMPLETED,
         completed=False,
     )
@@ -562,9 +563,9 @@ def start_session(request):
 
     timer_type = serializer.validated_data.get("timer_type", "default")
 
-    complete_running_sessions(request.user)
+    complete_running_sessions(request.user, timer_type)
     adaptive_break_factor = get_adaptive_break_factor(request.user)
-    if timer_type == "custom":
+    if timer_type in ("custom", "default"):
         adjusted_session = {
             "work_duration": serializer.validated_data["work_duration"],
             "break_duration": serializer.validated_data["break_duration"],
@@ -586,6 +587,7 @@ def start_session(request):
         total_sessions=serializer.validated_data["total_sessions"],
         current_session=serializer.validated_data["current_session"],
         status=Session.STATUS_RUNNING,
+        timer_type=timer_type,
     )
 
     short_break = calculate_short_break(
@@ -649,7 +651,7 @@ def start_session(request):
 @api_view(["POST"])
 @permission_classes([IsAuthenticated])
 def pause_session(request):
-    serializer = SessionTransitionSerializer(data=request.data)
+    serializer = SessionPauseResumeSerializer(data=request.data)
     if not serializer.is_valid():
         if "session_id" in serializer.errors:
             return error_response("session_id is required.", status.HTTP_400_BAD_REQUEST)
@@ -685,7 +687,7 @@ def pause_session(request):
 @api_view(["POST"])
 @permission_classes([IsAuthenticated])
 def resume_session(request):
-    serializer = SessionTransitionSerializer(data=request.data)
+    serializer = SessionPauseResumeSerializer(data=request.data)
     if not serializer.is_valid():
         if "session_id" in serializer.errors:
             return error_response("session_id is required.", status.HTTP_400_BAD_REQUEST)
