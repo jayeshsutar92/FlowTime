@@ -3,6 +3,7 @@ name: flowtime
 services:
   db:
     image: postgres:16-alpine
+    pull_policy: if_not_present
     environment:
       POSTGRES_DB: flowtime
       POSTGRES_USER: flowtime
@@ -21,6 +22,8 @@ services:
   backend:
     build:
       context: ./backend/backend
+      pull: false
+    pull_policy: build
     environment:
       DATABASE_URL: postgres://flowtime:flowtime@db:5432/flowtime
       DJANGO_SETTINGS_MODULE: config.settings
@@ -40,6 +43,8 @@ services:
       context: ./frontend
       args:
         VITE_API_URL: /api
+      pull: false
+    pull_policy: build
     depends_on:
       - backend
     ports:
