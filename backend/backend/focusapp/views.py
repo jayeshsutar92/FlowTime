@@ -14,11 +14,13 @@ from django.conf import settings
 from django.utils import timezone
 from django.middleware.csrf import get_token
 from django.views.decorators.csrf import ensure_csrf_cookie
+from rest_framework_simplejwt.tokens import RefreshToken
+from django.core.cache import cache
 from rest_framework import status
-from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
-from rest_framework_simplejwt.tokens import RefreshToken
+from rest_framework.decorators import api_view, permission_classes, throttle_classes
+from rest_framework.throttling import ScopedRateThrottle
 
 from .models import MusicTrack, OTPVerification, Preset, Session
 from .serializers import (
@@ -91,6 +93,53 @@ def parse_days_filter(days_value):
         return "The 'days' query parameter must be a positive integer."
 
     return days
+
+
+def get_user_cache_version(user):
+    try:
+        return cache.get_or_set(f"user_cache_version:{user.id}", 1)
+    except Exception as e:
+        logger.warning("Cache server offline, bypassing cache: %s", e)
+        return None
+
+
+def invalidate_user_stats_cache(user):
+    try:
+        cache.get_or_set(f"user_cache_version:{user.id}", 1)
+        cache.incr(f"user_cache_version:{user.id}")
+        logger.info("Successfully invalidated cache for user %s", user.id)
+    except Exception as e:
+        logger.warning("Failed to invalidate cache for user %s: %s", user.id, e)
+
+
+from rest_framework.throttling import SimpleRateThrottle
+
+class LoginRateThrottle(SimpleRateThrottle):
+    scope = 'login'
+
+    def get_cache_key(self, request, view):
+        if request.user and request.user.is_authenticated:
+            ident = request.user.pk
+        else:
+            ident = self.get_ident(request)
+        return self.cache_format % {
+            'scope': self.scope,
+            'ident': ident
+        }
+
+
+class OtpRateThrottle(SimpleRateThrottle):
+    scope = 'otp'
+
+    def get_cache_key(self, request, view):
+        if request.user and request.user.is_authenticated:
+            ident = request.user.pk
+        else:
+            ident = self.get_ident(request)
+        return self.cache_format % {
+            'scope': self.scope,
+            'ident': ident
+        }
 
 
 def get_recent_completion_rate(user, limit=10):
@@ -322,6 +371,7 @@ def signup(request):
 
 
 @api_view(["POST"])
+@throttle_classes([LoginRateThrottle])
 def login_user(request):
     serializer = LoginSerializer(data=request.data)
     if not serializer.is_valid():
@@ -394,6 +444,7 @@ def custom_token_refresh(request):
 
 
 @api_view(["POST"])
+@throttle_classes([OtpRateThrottle])
 def forgot_password(request):
     serializer = ForgotPasswordSerializer(data=request.data)
     if not serializer.is_valid():
@@ -416,6 +467,7 @@ def forgot_password(request):
 
 
 @api_view(["POST"])
+@throttle_classes([OtpRateThrottle])
 def reset_password(request):
     serializer = ResetPasswordSerializer(data=request.data)
     if not serializer.is_valid():
@@ -465,36 +517,58 @@ def reset_password(request):
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
 def get_productivity_score(request):
+    version = get_user_cache_version(request.user)
+    if version is not None:
+        cache_key = f"prod_score:{request.user.id}:v{version}"
+        try:
+            cached_data = cache.get(cache_key)
+            if cached_data is not None:
+                return success_response("Score fetched", cached_data)
+        except Exception as e:
+            logger.warning("Failed to get productivity score cache: %s", e)
+
     total_sessions = Session.objects.filter(user=request.user).count()
     if total_sessions == 0:
-        return success_response(
-            "Score fetched",
-            {"score": 0, "level": "No data"},
-        )
-
-    completed_sessions = Session.objects.filter(user=request.user, status=Session.STATUS_COMPLETED)
-    completed_count = completed_sessions.count()
-    completion_rate = completed_count / total_sessions if total_sessions else 0
-    avg_session_length = completed_sessions.aggregate(avg=Avg("work_duration"))["avg"] or 0
-    streak = get_completed_streak(request.user)
-    score = calculate_productivity_score(completion_rate, avg_session_length, streak)
-
-    if score < 40:
-        level = "Low"
-    elif score <= 70:
-        level = "Moderate"
+        response_data = {"score": 0, "level": "No data"}
     else:
-        level = "High"
+        completed_sessions = Session.objects.filter(user=request.user, status=Session.STATUS_COMPLETED)
+        completed_count = completed_sessions.count()
+        completion_rate = completed_count / total_sessions if total_sessions else 0
+        avg_session_length = completed_sessions.aggregate(avg=Avg("work_duration"))["avg"] or 0
+        streak = get_completed_streak(request.user)
+        score = calculate_productivity_score(completion_rate, avg_session_length, streak)
 
-    return success_response(
-        "Score fetched",
-        {"score": score, "level": level},
-    )
+        if score < 40:
+            level = "Low"
+        elif score <= 70:
+            level = "Moderate"
+        else:
+            level = "High"
+        response_data = {"score": score, "level": level}
+
+    if version is not None:
+        try:
+            cache_key = f"prod_score:{request.user.id}:v{version}"
+            cache.set(cache_key, response_data, timeout=300)
+        except Exception as e:
+            logger.warning("Failed to set productivity score cache: %s", e)
+
+    return success_response("Score fetched", response_data)
 
 
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
 def get_heatmap(request):
+    version = get_user_cache_version(request.user)
+    if version is not None:
+        cache_key = f"heatmap:{request.user.id}:v{version}"
+        try:
+            cached_data = cache.get(cache_key)
+            if cached_data is not None:
+                return success_response("Heatmap fetched", cached_data)
+        except Exception as e:
+            logger.warning("Failed to get heatmap cache: %s", e)
+
     today = timezone.localdate()
     start_date = today - timedelta(days=6)
 
@@ -511,16 +585,31 @@ def get_heatmap(request):
         counts_by_day.get(start_date + timedelta(days=offset), 0)
         for offset in range(7)
     ]
+    response_data = {"last_7_days": last_7_days}
 
-    return success_response(
-        "Heatmap fetched",
-        {"last_7_days": last_7_days},
-    )
+    if version is not None:
+        try:
+            cache_key = f"heatmap:{request.user.id}:v{version}"
+            cache.set(cache_key, response_data, timeout=300)
+        except Exception as e:
+            logger.warning("Failed to set heatmap cache: %s", e)
+
+    return success_response("Heatmap fetched", response_data)
 
 
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
 def get_insights(request):
+    version = get_user_cache_version(request.user)
+    if version is not None:
+        cache_key = f"insights:{request.user.id}:v{version}"
+        try:
+            cached_data = cache.get(cache_key)
+            if cached_data is not None:
+                return success_response("Insights fetched", cached_data)
+        except Exception as e:
+            logger.warning("Failed to get insights cache: %s", e)
+
     completed_sessions = Session.objects.filter(user=request.user, status=Session.STATUS_COMPLETED)
     all_sessions = Session.objects.filter(user=request.user)
 
@@ -538,15 +627,21 @@ def get_insights(request):
     )
     best_focus_time = best_focus_row["focus_hour"] if best_focus_row else None
 
-    return success_response(
-        "Insights fetched",
-        {
-            "avg_session_length": avg_session_length,
-            "completion_rate": completion_rate,
-            "best_focus_time": format_focus_hour(best_focus_time),
-            "recommendation": build_recommendation(completion_rate, avg_session_length),
-        },
-    )
+    response_data = {
+        "avg_session_length": avg_session_length,
+        "completion_rate": completion_rate,
+        "best_focus_time": format_focus_hour(best_focus_time),
+        "recommendation": build_recommendation(completion_rate, avg_session_length),
+    }
+
+    if version is not None:
+        try:
+            cache_key = f"insights:{request.user.id}:v{version}"
+            cache.set(cache_key, response_data, timeout=300)
+        except Exception as e:
+            logger.warning("Failed to set insights cache: %s", e)
+
+    return success_response("Insights fetched", response_data)
 
 
 @api_view(["POST"])
@@ -641,6 +736,7 @@ def start_session(request):
 
     logger.info("start_session response data=%s", response_serializer.validated_data)
 
+    invalidate_user_stats_cache(request.user)
     return success_response(
         "Session started",
         response_serializer.validated_data,
@@ -673,6 +769,7 @@ def pause_session(request):
     session.status = Session.STATUS_PAUSED
     session.paused_at = timezone.now()
     session.save(update_fields=["status", "paused_at", "completed"])
+    invalidate_user_stats_cache(request.user)
     return success_response(
         "Session paused",
         {
@@ -713,6 +810,7 @@ def resume_session(request):
     session.status = Session.STATUS_RUNNING
     session.save(update_fields=["status", "paused_at", "paused_seconds", "completed"])
 
+    invalidate_user_stats_cache(request.user)
     return success_response(
         "Session resumed",
         {
@@ -750,6 +848,7 @@ def end_session(request):
         status=Session.STATUS_COMPLETED,
         completed=completed
     )
+    invalidate_user_stats_cache(request.user)
     return success_response(
         "Session Completed",
         {"session_id": session.id, "status": Session.STATUS_COMPLETED},
@@ -759,11 +858,21 @@ def end_session(request):
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
 def get_stats(request):
-    sessions = Session.objects.filter(user=request.user, status=Session.STATUS_COMPLETED)
     days = parse_days_filter(request.query_params.get("days"))
     if isinstance(days, str):
         return error_response(days, status.HTTP_400_BAD_REQUEST)
 
+    version = get_user_cache_version(request.user)
+    if version is not None:
+        cache_key = f"stats:{request.user.id}:{days}:v{version}"
+        try:
+            cached_data = cache.get(cache_key)
+            if cached_data is not None:
+                return success_response("Stats fetched successfully.", cached_data)
+        except Exception as e:
+            logger.warning("Failed to get stats cache: %s", e)
+
+    sessions = Session.objects.filter(user=request.user, status=Session.STATUS_COMPLETED)
     if days is not None:
         since = timezone.now() - timedelta(days=days)
         sessions = sessions.filter(created_at__gte=since)
@@ -774,14 +883,20 @@ def get_stats(request):
     )
     total_sessions = sessions.count()
 
-    return success_response(
-        "Stats fetched successfully.",
-        {
-            "total_focus_time": stats["total_focus_time"] or 0,
-            "total_sessions": total_sessions,
-            "average_session_time": stats["average_session_time"] or 0,
-        },
-    )
+    response_data = {
+        "total_focus_time": stats["total_focus_time"] or 0,
+        "total_sessions": total_sessions,
+        "average_session_time": stats["average_session_time"] or 0,
+    }
+
+    if version is not None:
+        try:
+            cache_key = f"stats:{request.user.id}:{days}:v{version}"
+            cache.set(cache_key, response_data, timeout=300)
+        except Exception as e:
+            logger.warning("Failed to set stats cache: %s", e)
+
+    return success_response("Stats fetched successfully.", response_data)
 
 
 @api_view(["POST"])

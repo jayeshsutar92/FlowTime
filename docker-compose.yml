@@ -19,6 +19,12 @@ services:
       retries: 10
       start_period: 5s
 
+  redis:
+    image: redis:7-alpine
+    pull_policy: if_not_present
+    ports:
+      - "6379:6379"
+
   backend:
     build:
       context: ./backend/backend
@@ -26,6 +32,7 @@ services:
     pull_policy: build
     environment:
       DATABASE_URL: postgres://flowtime:flowtime@db:5432/flowtime
+      REDIS_URL: redis://redis:6379/1
       DJANGO_SETTINGS_MODULE: config.settings
       FRONTEND_ORIGINS: http://localhost:3000,http://127.0.0.1:3000
       CSRF_COOKIE_SECURE: "false"
@@ -35,6 +42,8 @@ services:
     depends_on:
       db:
         condition: service_healthy
+      redis:
+        condition: service_started
     ports:
       - "8000:8000"
 
