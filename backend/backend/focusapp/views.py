@@ -1066,9 +1066,9 @@ def parse_optional_int(value, field_name):
     return parsed
 
 
-def get_music_track(track_id):
+def get_music_track(track_id, user):
     try:
-        return MusicTrack.objects.get(id=track_id)
+        return MusicTrack.objects.get(id=track_id, user=user)
     except MusicTrack.DoesNotExist:
         return None
 
@@ -1232,7 +1232,7 @@ def upload_music(request):
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
 def list_music_tracks(request):
-    tracks = MusicTrack.objects.filter(Q(user=request.user) | Q(user__isnull=True)).order_by("-created_at")
+    tracks = MusicTrack.objects.filter(user=request.user).order_by("-created_at")
     serializer = MusicTrackSerializer(tracks, many=True, context={"request": request})
     return success_response("Tracks fetched", serializer.data)
 
@@ -1257,7 +1257,7 @@ def playlists_collection(request):
     track_ids = request.data.get("track_ids", [])
     if isinstance(track_ids, list):
         for idx, track_id in enumerate(track_ids):
-            track = get_music_track(track_id)
+            track = get_music_track(track_id, request.user)
             if track:
                 PlaylistTrack.objects.create(playlist=playlist, track=track, position=idx)
 
@@ -1290,7 +1290,7 @@ def playlist_detail(request, id):
         if track_ids is not None and isinstance(track_ids, list):
             PlaylistTrack.objects.filter(playlist=playlist).delete()
             for idx, track_id in enumerate(track_ids):
-                track = get_music_track(track_id)
+                track = get_music_track(track_id, request.user)
                 if track:
                     PlaylistTrack.objects.create(playlist=playlist, track=track, position=idx)
 
@@ -1314,7 +1314,7 @@ def favorites_collection(request):
 @permission_classes([IsAuthenticated])
 def add_favorite(request):
     track_id = request.data.get("track_id")
-    track = get_music_track(track_id)
+    track = get_music_track(track_id, request.user)
     if not track:
         return error_response("Track not found", status.HTTP_404_NOT_FOUND)
 
@@ -1351,7 +1351,7 @@ def add_to_queue(request):
     added_ids = []
 
     if track_id:
-        track = get_music_track(track_id)
+        track = get_music_track(track_id, request.user)
         if track:
             queue.append(track.id)
             added_ids.append(track.id)
@@ -1440,7 +1440,7 @@ def play_next(request):
     track_id = advance_playback(request.user.id, direction=1)
     if track_id is None:
         return success_response("Playback reached the end of queue", None)
-    track = get_music_track(track_id)
+    track = get_music_track(track_id, request.user)
     serializer = MusicTrackSerializer(track, context={"request": request})
     return success_response("Skipped to next track", serializer.data)
 
@@ -1451,7 +1451,7 @@ def play_previous(request):
     track_id = advance_playback(request.user.id, direction=-1)
     if track_id is None:
         return success_response("Queue is empty", None)
-    track = get_music_track(track_id)
+    track = get_music_track(track_id, request.user)
     serializer = MusicTrackSerializer(track, context={"request": request})
     return success_response("Skipped to previous track", serializer.data)
 
@@ -1509,7 +1509,7 @@ def playback_state(request):
     track_id = resolve_current_track_id(request.user.id)
     track_data = None
     if track_id:
-        track = get_music_track(track_id)
+        track = get_music_track(track_id, request.user)
         if track:
             track_data = MusicTrackSerializer(track, context={"request": request}).data
 

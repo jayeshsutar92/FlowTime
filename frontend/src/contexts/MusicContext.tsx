@@ -77,6 +77,11 @@ export const MusicProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const [favorites, setFavorites] = useState<Track[]>([]);
   const [queue, setQueue] = useState<Track[]>([]);
   const [currentTrack, setCurrentTrack] = useState<Track | null>(null);
+  const currentTrackRef = useRef<Track | null>(null);
+  const updateCurrentTrack = (track: Track | null) => {
+    currentTrackRef.current = track;
+    setCurrentTrack(track);
+  };
   const [isPlaying, setIsPlaying] = useState(false);
   const [progress, setProgress] = useState(0);
   const [duration, setDuration] = useState(0);
@@ -109,7 +114,9 @@ export const MusicProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     };
 
     const handleError = () => {
-      setError("Error playing audio stream.");
+      if (currentTrackRef.current) {
+        setError("Error playing audio stream.");
+      }
       setIsPlaying(false);
     };
 
@@ -177,7 +184,7 @@ export const MusicProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       
       if (state.current_track) {
         const track: Track = state.current_track;
-        setCurrentTrack(track);
+        updateCurrentTrack(track);
         if (audioRef.current) {
           audioRef.current.src = track.audio_url || "";
           audioRef.current.currentTime = state.progress_seconds || 0;
@@ -247,7 +254,7 @@ export const MusicProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         const updatedQueue: Track[] = updatedQueueRes.data.data;
         const index = updatedQueue.findIndex((q) => q.id === track.id);
         
-        setCurrentTrack(track);
+        updateCurrentTrack(track);
         audioRef.current.src = track.audio_url || "";
         audioRef.current.currentTime = 0;
 
@@ -280,23 +287,23 @@ export const MusicProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
   const next = async () => {
     if (!audioRef.current) return;
+    audioRef.current.pause();
     try {
       const res = await api.post("/music/queue/next/");
       const track = res.data.data;
       if (track) {
-        setCurrentTrack(track);
+        updateCurrentTrack(track);
         audioRef.current.src = track.audio_url || "";
         audioRef.current.currentTime = 0;
-        if (isPlaying) {
-          await audioRef.current.play();
-        }
+        setIsPlaying(true);
+        await audioRef.current.play().catch(() => {});
         // Sync queue index change
         await refreshQueue();
         await fetchPlaybackState();
       } else {
         // Reached end of queue or queue empty
         setIsPlaying(false);
-        audioRef.current.pause();
+        updateCurrentTrack(null);
       }
     } catch (e) {
       setError("Failed to skip forward.");
@@ -305,16 +312,25 @@ export const MusicProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
   const previous = async () => {
     if (!audioRef.current) return;
+
+    if (audioRef.current.currentTime > 3) {
+      audioRef.current.currentTime = 0;
+      setProgress(0);
+      setIsPlaying(true);
+      await audioRef.current.play().catch(() => {});
+      return;
+    }
+
+    audioRef.current.pause();
     try {
       const res = await api.post("/music/queue/previous/");
       const track = res.data.data;
       if (track) {
-        setCurrentTrack(track);
+        updateCurrentTrack(track);
         audioRef.current.src = track.audio_url || "";
         audioRef.current.currentTime = 0;
-        if (isPlaying) {
-          await audioRef.current.play();
-        }
+        setIsPlaying(true);
+        await audioRef.current.play().catch(() => {});
         await refreshQueue();
         await fetchPlaybackState();
       }

@@ -37,8 +37,21 @@ export default function GlobalPlayer() {
     return `${m}:${s.toString().padStart(2, "0")}`;
   };
 
+  const [isDragging, setIsDragging] = React.useState(false);
+  const [dragValue, setDragValue] = React.useState(0);
+
   const handleSeekChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    seek(Number(e.target.value));
+    setDragValue(Number(e.target.value));
+  };
+
+  const handleSeekStart = () => {
+    setIsDragging(true);
+    setDragValue(progress);
+  };
+
+  const handleSeekEnd = () => {
+    seek(dragValue);
+    setIsDragging(false);
   };
 
   const handleVolumeChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -135,14 +148,18 @@ export default function GlobalPlayer() {
         </div>
 
         {/* Progress seek slider */}
-        <div className="w-full flex items-center gap-3 text-xs text-on-surface-variant">
-          <span className="w-10 text-right tabular-nums">{formatTime(progress)}</span>
+        <div className="w-full flex-center gap-3 text-xs text-on-surface-variant flex items-center justify-between">
+          <span className="w-10 text-right tabular-nums">{formatTime(isDragging ? dragValue : progress)}</span>
           <input
             type="range"
             min={0}
             max={duration || 100}
-            value={progress}
+            value={isDragging ? dragValue : progress}
+            onMouseDown={handleSeekStart}
+            onTouchStart={handleSeekStart}
             onChange={handleSeekChange}
+            onMouseUp={handleSeekEnd}
+            onTouchEnd={handleSeekEnd}
             className="flex-1 h-1 rounded-lg bg-surface-container appearance-none cursor-pointer accent-primary hover:accent-primary-hover [&::-webkit-slider-runnable-track]:bg-surface-container [&::-webkit-slider-thumb]:w-3 [&::-webkit-slider-thumb]:h-3 [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:bg-primary"
           />
           <span className="w-10 text-left tabular-nums">{formatTime(duration)}</span>

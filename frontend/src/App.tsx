@@ -41,28 +41,30 @@ const RootRoutes = () => (
       path="/*"
       element={
         <ProtectedRoute>
-          <div className="min-h-screen bg-background relative overflow-hidden flex flex-col pb-24">
-            {/* Background Ambient Glows */}
-            <div className="absolute top-[-20%] left-[-10%] w-[600px] h-[600px] bg-primary/10 rounded-full blur-[120px] pointer-events-none z-0"></div>
-            <div className="absolute bottom-[-20%] right-[-10%] w-[500px] h-[500px] bg-secondary/10 rounded-full blur-[100px] pointer-events-none z-0"></div>
-            
-            <div className="relative z-10 flex flex-col min-h-screen">
-              <TopNav />
-              <RouteErrorBoundary>
-                <Routes>
-                  <Route path="/timer" element={<TimerSelection />} />
-                  <Route path="/timer/default" element={<DefaultTimer />} />
-                  <Route path="/timer/custom" element={<CustomTimer />} />
-                  <Route path="/dashboard" element={<Dashboard />} />
-                  <Route path="/presets" element={<Presets />} />
-                  <Route path="/music" element={<Music />} />
-                  <Route path="/admin" element={<AdminRoute><Admin /></AdminRoute>} />
-                  <Route path="*" element={<Navigate to="/timer" />} />
-                </Routes>
-              </RouteErrorBoundary>
+          <MusicProvider>
+            <div className="min-h-screen bg-background relative overflow-hidden flex flex-col pb-24">
+              {/* Background Ambient Glows */}
+              <div className="absolute top-[-20%] left-[-10%] w-[600px] h-[600px] bg-primary/10 rounded-full blur-[120px] pointer-events-none z-0"></div>
+              <div className="absolute bottom-[-20%] right-[-10%] w-[500px] h-[500px] bg-secondary/10 rounded-full blur-[100px] pointer-events-none z-0"></div>
+              
+              <div className="relative z-10 flex flex-col min-h-screen">
+                <TopNav />
+                <RouteErrorBoundary>
+                  <Routes>
+                    <Route path="/timer" element={<TimerSelection />} />
+                    <Route path="/timer/default" element={<DefaultTimer />} />
+                    <Route path="/timer/custom" element={<CustomTimer />} />
+                    <Route path="/dashboard" element={<Dashboard />} />
+                    <Route path="/presets" element={<Presets />} />
+                    <Route path="/music" element={<Music />} />
+                    <Route path="/admin" element={<AdminRoute><Admin /></AdminRoute>} />
+                    <Route path="*" element={<Navigate to="/timer" />} />
+                  </Routes>
+                </RouteErrorBoundary>
+              </div>
+              <GlobalPlayer />
             </div>
-            <GlobalPlayer />
-          </div>
+          </MusicProvider>
         </ProtectedRoute>
       }
     />
@@ -74,9 +76,7 @@ const router = createBrowserRouter([{ path: "*", element: <RootRoutes /> }]);
 export default function App() {
   return (
     <AuthProvider>
-      <MusicProvider>
-        <RouterProvider router={router} />
-      </MusicProvider>
+      <RouterProvider router={router} />
     </AuthProvider>
   );
 }
