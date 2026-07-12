@@ -184,6 +184,8 @@ DEFAULT_FROM_EMAIL = "noreply@focusflow.local"
 STATIC_ROOT = BASE_DIR / 'staticfiles'
 MEDIA_URL = '/media/'
 MEDIA_ROOT = BASE_DIR / 'media'
+DATA_UPLOAD_MAX_MEMORY_SIZE = 52428800
+FILE_UPLOAD_MAX_MEMORY_SIZE = 52428800
 
 from datetime import timedelta
 REST_FRAMEWORK = {
