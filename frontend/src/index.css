@@ -51,16 +51,62 @@
 }
 
 @layer base {
+  html, body, .glass-card, button, input, select, textarea, div {
+    transition: background-color 0.3s ease, border-color 0.3s ease, color 0.3s ease, box-shadow 0.3s ease;
+  }
   body {
     @apply bg-background text-on-surface font-body-md overflow-x-hidden selection:bg-primary-container selection:text-on-primary-container;
   }
 }
 
+html.light {
+  --color-background: #f8fafc;
+  --color-surface: #ffffff;
+  --color-surface-variant: #f1f5f9;
+  --color-surface-bright: #e2e8f0;
+  --color-surface-container-lowest: #ffffff;
+  --color-surface-container-low: rgba(0, 0, 0, 0.02);
+  --color-surface-container: rgba(0, 0, 0, 0.04);
+  --color-surface-container-high: rgba(0, 0, 0, 0.06);
+  --color-surface-container-highest: rgba(248, 250, 252, 0.5);
+
+  --color-on-surface: #0f172a;
+  --color-on-surface-variant: #475569;
+  --color-on-background: #0f172a;
+
+  --color-primary: #2563eb;
+  --color-on-primary: #ffffff;
+  --color-primary-container: #3b82f6;
+  --color-on-primary-container: #ffffff;
+  --color-primary-fixed: #1d4ed8;
+  --color-primary-fixed-dim: #1e40af;
+
+  --color-secondary: #4f46e5;
+  --color-on-secondary: #ffffff;
+  --color-secondary-container: #6366f1;
+  --color-on-secondary-container: #ffffff;
+
+  --color-tertiary: #7c3aed;
+  --color-on-tertiary: #ffffff;
+  --color-tertiary-container: #8b5cf6;
+
+  --color-outline: rgba(0, 0, 0, 0.1);
+  --color-outline-variant: rgba(0, 0, 0, 0.05);
+
+  --glass-bg: rgba(15, 23, 42, 0.02);
+  --glass-border: rgba(15, 23, 42, 0.08);
+}
+
+:root {
+  --glass-bg: rgba(255, 255, 255, 0.03);
+  --glass-border: rgba(255, 255, 255, 0.1);
+}
+
 @layer utilities {
   .glass-card {
-    background: rgba(255, 255, 255, 0.03);
+    background: var(--glass-bg);
     backdrop-filter: blur(16px);
-    border: 1px solid rgba(255, 255, 255, 0.1);
+    border: 1px solid var(--glass-border);
     border-radius: 1.5rem !important;
   }
   .ambient-glow {
@@ -76,11 +122,11 @@
     text-shadow: 0 0 20px rgba(59, 130, 246, 0.3);
   }
   .mesh-bg {
-    background-color: #020617;
+    background-color: var(--color-background);
     background-image: 
-        radial-gradient(at 0% 0%, rgba(59, 130, 246, 0.1) 0px, transparent 50%),
-        radial-gradient(at 100% 0%, rgba(99, 102, 241, 0.05) 0px, transparent 50%),
-        radial-gradient(at 100% 100%, rgba(59, 130, 246, 0.1) 0px, transparent 50%),
-        radial-gradient(at 0% 100%, rgba(99, 102, 241, 0.05) 0px, transparent 50%);
+        radial-gradient(at 0% 0%, rgba(59, 130, 246, 0.08) 0px, transparent 50%),
+        radial-gradient(at 100% 0%, rgba(99, 102, 241, 0.03) 0px, transparent 50%),
+        radial-gradient(at 100% 100%, rgba(59, 130, 246, 0.08) 0px, transparent 50%),
+        radial-gradient(at 0% 100%, rgba(99, 102, 241, 0.03) 0px, transparent 50%);
   }
 }

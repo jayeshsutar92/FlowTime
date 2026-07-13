@@ -71,12 +71,16 @@ const RootRoutes = () => (
   </Routes>
 );
 
+import { ThemeProvider } from "./contexts/ThemeContext";
+
 const router = createBrowserRouter([{ path: "*", element: <RootRoutes /> }]);
 
 export default function App() {
   return (
-    <AuthProvider>
-      <RouterProvider router={router} />
-    </AuthProvider>
+    <ThemeProvider>
+      <AuthProvider>
+        <RouterProvider router={router} />
+      </AuthProvider>
+    </ThemeProvider>
   );
 }
