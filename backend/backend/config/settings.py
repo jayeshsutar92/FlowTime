@@ -155,9 +155,13 @@ FRONTEND_ORIGINS = env_list(
         "http://localhost:3000",
         "http://127.0.0.1:3000",
         "https://flow-time-three.vercel.app",
+        "https://flow-time-jade.vercel.app",
     ],
 )
 CORS_ALLOWED_ORIGINS = FRONTEND_ORIGINS
+CORS_ALLOWED_ORIGIN_REGEXES = [
+    r"^https:\/\/flow-time-[a-zA-Z0-9-]+\.vercel\.app$",
+]
 CORS_ALLOW_CREDENTIALS = True
 CSRF_TRUSTED_ORIGINS = FRONTEND_ORIGINS
 
