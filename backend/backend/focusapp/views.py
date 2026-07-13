@@ -49,7 +49,7 @@ User = get_user_model()
 @api_view(["GET"])
 def csrf_cookie(request):
     token = get_token(request)
-    response = success_response("CSRF cookie set", None)
+    response = success_response("CSRF cookie set", {"csrfToken": token})
     response.set_cookie(
         "csrftoken",
         token,

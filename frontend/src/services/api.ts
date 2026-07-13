@@ -55,15 +55,22 @@ const csrfClient = axios.create({
   xsrfHeaderName: "X-CSRFToken",
 });
 
+let memoryCsrfToken: string | null = null;
+
 export const resetCsrfState = () => {
+  memoryCsrfToken = null;
   if (typeof document !== "undefined") {
     document.cookie = "csrftoken=; Max-Age=0; path=/";
   }
 };
 
 export const ensureCsrfCookie = async () => {
-  await csrfClient.get("/csrf/");
-  if (!getCookie("csrftoken")) {
+  const response = await csrfClient.get("/csrf/");
+  if (response.data?.data?.csrfToken) {
+    memoryCsrfToken = response.data.data.csrfToken;
+  }
+  const token = getCookie("csrftoken") || memoryCsrfToken;
+  if (!token) {
     throw new Error("CSRF cookie missing after refresh");
   }
 };
@@ -82,7 +89,7 @@ const getCookie = (name: string) => {
 api.interceptors.request.use((config) => {
   const method = (config.method || "get").toLowerCase();
   if (!["get", "head", "options"].includes(method)) {
-    const csrfToken = getCookie("csrftoken");
+    const csrfToken = getCookie("csrftoken") || memoryCsrfToken;
     if (csrfToken) {
       config.headers = config.headers || {};
       config.headers["X-CSRFToken"] = csrfToken;
