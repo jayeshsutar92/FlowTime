@@ -6,10 +6,12 @@ class Session(models.Model):
     STATUS_RUNNING = "running"
     STATUS_PAUSED = "paused"
     STATUS_COMPLETED = "completed"
+    STATUS_CANCELLED = "cancelled"
     STATUS_CHOICES = [
         (STATUS_RUNNING, "Running"),
         (STATUS_PAUSED, "Paused"),
         (STATUS_COMPLETED, "Completed"),
+        (STATUS_CANCELLED, "Cancelled"),
     ]
 
     user = models.ForeignKey(

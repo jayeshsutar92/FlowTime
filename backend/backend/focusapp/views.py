@@ -261,14 +261,16 @@ def adjust_session_durations(user, work_duration, break_duration):
     return result
 
 
-def build_recommendation(completion_rate, avg_session_length):
+def build_recommendation(completion_rate, avg_session_length, total_sessions):
+    if total_sessions == 0:
+        return "Complete your first session to unlock insights"
     if completion_rate < 0.5:
-        return "Increase break duration"
+        return "Try shorter focus sessions to build consistency"
+    if completion_rate > 0.8 and avg_session_length < 25:
+        return "Great completion rate! Try increasing focus duration"
     if completion_rate > 0.8:
-        return "Reduce break slightly"
-    if avg_session_length and avg_session_length < 25:
-        return "Increase focus duration"
-    return "Maintain current routine"
+        return "Maintain your current productive routine"
+    return "Adjust break intervals to sustain energy"
 
 
 def format_focus_hour(hour):
@@ -283,9 +285,9 @@ def format_focus_hour(hour):
 
 def get_completed_streak(user):
     streak = 0
-    recent_statuses = Session.objects.filter(user=user).order_by("-created_at").values_list("status", flat=True)
-    for session_status in recent_statuses:
-        if session_status != Session.STATUS_COMPLETED:
+    recent_completed = Session.objects.filter(user=user).exclude(status=Session.STATUS_RUNNING).order_by("-created_at").values_list("completed", flat=True)
+    for is_completed in recent_completed:
+        if not is_completed:
             break
         streak += 1
     return streak
@@ -300,6 +302,26 @@ def calculate_productivity_score(completion_rate, avg_session_length, streak):
     return int(score)
 
 
+def calculate_user_level_and_xp(user):
+    total_minutes = Session.objects.filter(user=user, completed=True).aggregate(sum=Sum("work_duration"))["sum"] or 0
+    total_xp = total_minutes * 10
+    level = (total_xp // 1000) + 1
+    next_level_xp = level * 1000
+    current_level_xp = total_xp % 1000
+    progress_pct = min(100, int((current_level_xp / 1000) * 100))
+    completed_count = Session.objects.filter(user=user, completed=True).count()
+    sessions_needed = max(1, (1000 - current_level_xp + 24) // 25)
+    return {
+        "level": level,
+        "total_xp": total_xp,
+        "next_level_xp": next_level_xp,
+        "current_level_xp": current_level_xp,
+        "progress_pct": progress_pct,
+        "completed_sessions": completed_count,
+        "sessions_needed": sessions_needed,
+    }
+
+
 def get_session_or_404(session_id, user):
     try:
         return Session.objects.get(id=session_id, user=user)
@@ -309,7 +331,7 @@ def get_session_or_404(session_id, user):
 
 def complete_running_sessions(user, timer_type="default"):
     return Session.objects.filter(user=user, status=Session.STATUS_RUNNING, timer_type=timer_type).update(
-        status=Session.STATUS_COMPLETED,
+        status=Session.STATUS_CANCELLED,
         completed=False,
     )
 
@@ -519,9 +541,13 @@ def reset_password(request):
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
 def get_productivity_score(request):
+    days = parse_days_filter(request.query_params.get("days"))
+    if isinstance(days, str):
+        return error_response(days, status.HTTP_400_BAD_REQUEST)
+
     version = get_user_cache_version(request.user)
     if version is not None:
-        cache_key = f"prod_score:{request.user.id}:v{version}"
+        cache_key = f"prod_score:{request.user.id}:{days}:v{version}"
         try:
             cached_data = cache.get(cache_key)
             if cached_data is not None:
@@ -529,13 +555,24 @@ def get_productivity_score(request):
         except Exception as e:
             logger.warning("Failed to get productivity score cache: %s", e)
 
-    total_sessions = Session.objects.filter(user=request.user).count()
-    if total_sessions == 0:
-        response_data = {"score": 0, "level": "No data"}
+    sessions_qs = Session.objects.filter(user=request.user)
+    if days is not None:
+        since = timezone.now() - timedelta(days=days)
+        sessions_qs = sessions_qs.filter(created_at__gte=since)
+
+    total_attempted = sessions_qs.exclude(status=Session.STATUS_RUNNING).count()
+    level_data = calculate_user_level_and_xp(request.user)
+
+    if total_attempted == 0:
+        response_data = {
+            "score": 0,
+            "level": "No Data",
+            "level_info": level_data,
+        }
     else:
-        completed_sessions = Session.objects.filter(user=request.user, status=Session.STATUS_COMPLETED)
+        completed_sessions = sessions_qs.filter(completed=True)
         completed_count = completed_sessions.count()
-        completion_rate = completed_count / total_sessions if total_sessions else 0
+        completion_rate = completed_count / total_attempted if total_attempted else 0
         avg_session_length = completed_sessions.aggregate(avg=Avg("work_duration"))["avg"] or 0
         streak = get_completed_streak(request.user)
         score = calculate_productivity_score(completion_rate, avg_session_length, streak)
@@ -546,11 +583,16 @@ def get_productivity_score(request):
             level = "Moderate"
         else:
             level = "High"
-        response_data = {"score": score, "level": level}
+
+        response_data = {
+            "score": score,
+            "level": level,
+            "level_info": level_data,
+        }
 
     if version is not None:
         try:
-            cache_key = f"prod_score:{request.user.id}:v{version}"
+            cache_key = f"prod_score:{request.user.id}:{days}:v{version}"
             cache.set(cache_key, response_data, timeout=300)
         except Exception as e:
             logger.warning("Failed to set productivity score cache: %s", e)
@@ -561,9 +603,13 @@ def get_productivity_score(request):
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
 def get_heatmap(request):
+    days = parse_days_filter(request.query_params.get("days"))
+    if isinstance(days, str):
+        return error_response(days, status.HTTP_400_BAD_REQUEST)
+
     version = get_user_cache_version(request.user)
     if version is not None:
-        cache_key = f"heatmap:{request.user.id}:v{version}"
+        cache_key = f"heatmap:{request.user.id}:{days}:v{version}"
         try:
             cached_data = cache.get(cache_key)
             if cached_data is not None:
@@ -571,27 +617,47 @@ def get_heatmap(request):
         except Exception as e:
             logger.warning("Failed to get heatmap cache: %s", e)
 
-    today = timezone.localdate()
-    start_date = today - timedelta(days=6)
+    tz_offset_min = int(request.query_params.get("tz_offset", 0))
+    user_today = (timezone.now() - timedelta(minutes=tz_offset_min)).date()
 
-    session_counts = (
-        Session.objects.filter(user=request.user, created_at__date__gte=start_date, created_at__date__lte=today)
-        .annotate(day=TruncDate("created_at"))
-        .values("day")
-        .annotate(total=Count("id"))
-        .order_by("day")
+    num_days = days if days is not None else 7
+    start_date = user_today - timedelta(days=num_days - 1)
+
+    completed_timestamps = list(
+        Session.objects.filter(
+            user=request.user,
+            completed=True,
+            created_at__gte=timezone.now() - timedelta(days=num_days + 2)
+        ).values_list("created_at", flat=True)
     )
-    counts_by_day = {row["day"]: row["total"] for row in session_counts}
 
-    last_7_days = [
-        counts_by_day.get(start_date + timedelta(days=offset), 0)
-        for offset in range(7)
-    ]
-    response_data = {"last_7_days": last_7_days}
+    counts_by_date = {}
+    for created_at in completed_timestamps:
+        local_date = (created_at - timedelta(minutes=tz_offset_min)).date()
+        counts_by_date[local_date] = counts_by_date.get(local_date, 0) + 1
+
+    heatmap_list = []
+    last_7_days = []
+    for offset in range(num_days):
+        dt = start_date + timedelta(days=offset)
+        cnt = counts_by_date.get(dt, 0)
+        day_name = dt.strftime("%a")
+        heatmap_list.append({
+            "day": day_name,
+            "date": dt.isoformat(),
+            "count": cnt,
+        })
+        if offset >= num_days - 7:
+            last_7_days.append(cnt)
+
+    response_data = {
+        "last_7_days": last_7_days,
+        "days": heatmap_list,
+    }
 
     if version is not None:
         try:
-            cache_key = f"heatmap:{request.user.id}:v{version}"
+            cache_key = f"heatmap:{request.user.id}:{days}:v{version}"
             cache.set(cache_key, response_data, timeout=300)
         except Exception as e:
             logger.warning("Failed to set heatmap cache: %s", e)
@@ -602,9 +668,13 @@ def get_heatmap(request):
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
 def get_insights(request):
+    days = parse_days_filter(request.query_params.get("days"))
+    if isinstance(days, str):
+        return error_response(days, status.HTTP_400_BAD_REQUEST)
+
     version = get_user_cache_version(request.user)
     if version is not None:
-        cache_key = f"insights:{request.user.id}:v{version}"
+        cache_key = f"insights:{request.user.id}:{days}:v{version}"
         try:
             cached_data = cache.get(cache_key)
             if cached_data is not None:
@@ -612,33 +682,63 @@ def get_insights(request):
         except Exception as e:
             logger.warning("Failed to get insights cache: %s", e)
 
-    completed_sessions = Session.objects.filter(user=request.user, status=Session.STATUS_COMPLETED)
-    all_sessions = Session.objects.filter(user=request.user)
+    sessions_qs = Session.objects.filter(user=request.user)
+    if days is not None:
+        since = timezone.now() - timedelta(days=days)
+        sessions_qs = sessions_qs.filter(created_at__gte=since)
+
+    completed_sessions = sessions_qs.filter(completed=True)
+    all_attempted = sessions_qs.exclude(status=Session.STATUS_RUNNING)
 
     avg_session_length = completed_sessions.aggregate(avg=Avg("work_duration"))["avg"] or 0
-    total_sessions = all_sessions.count()
+    total_sessions = all_attempted.count()
     completed_count = completed_sessions.count()
     completion_rate = completed_count / total_sessions if total_sessions else 0
 
-    best_focus_row = (
-        completed_sessions.annotate(focus_hour=ExtractHour("created_at"))
-        .values("focus_hour")
-        .annotate(total=Count("id"))
-        .order_by("-total", "focus_hour")
-        .first()
-    )
-    best_focus_time = best_focus_row["focus_hour"] if best_focus_row else None
+    tz_offset_min = int(request.query_params.get("tz_offset", 0))
+
+    # Timezone-aware best focus time calculation
+    completed_list = list(completed_sessions.values_list("created_at", flat=True))
+    hour_counts = {}
+    for created_at in completed_list:
+        local_dt = created_at - timedelta(minutes=tz_offset_min)
+        h = local_dt.hour
+        hour_counts[h] = hour_counts.get(h, 0) + 1
+
+    best_focus_time = None
+    if hour_counts:
+        best_hour = max(hour_counts.keys(), key=lambda h: (hour_counts[h], -h))
+        best_focus_time = format_focus_hour(best_hour)
+
+    # Real Rhythm Visualization data: last 7 days focus time distribution
+    today = (timezone.now() - timedelta(minutes=tz_offset_min)).date()
+    rhythm_data = []
+    max_duration = 1
+    for offset in range(6, -1, -1):
+        target_date = today - timedelta(days=offset)
+        daily_mins = sum(
+            s.work_duration for s in completed_sessions
+            if (s.created_at - timedelta(minutes=tz_offset_min)).date() == target_date
+        )
+        if daily_mins > max_duration:
+            max_duration = daily_mins
+        day_str = target_date.strftime("%a")
+        rhythm_data.append({"day": day_str, "date": target_date.isoformat(), "minutes": daily_mins})
+
+    for item in rhythm_data:
+        item["pct"] = int((item["minutes"] / max_duration) * 100) if max_duration > 0 and item["minutes"] > 0 else 5
 
     response_data = {
-        "avg_session_length": avg_session_length,
-        "completion_rate": completion_rate,
-        "best_focus_time": format_focus_hour(best_focus_time),
-        "recommendation": build_recommendation(completion_rate, avg_session_length),
+        "avg_session_length": round(avg_session_length, 1),
+        "completion_rate": round(completion_rate, 4),
+        "best_focus_time": best_focus_time,
+        "recommendation": build_recommendation(completion_rate, avg_session_length, total_sessions),
+        "rhythm": rhythm_data,
     }
 
     if version is not None:
         try:
-            cache_key = f"insights:{request.user.id}:v{version}"
+            cache_key = f"insights:{request.user.id}:{days}:v{version}"
             cache.set(cache_key, response_data, timeout=300)
         except Exception as e:
             logger.warning("Failed to set insights cache: %s", e)
@@ -846,14 +946,15 @@ def end_session(request):
         )
 
     completed = serializer.validated_data["completed"]
+    new_status = Session.STATUS_COMPLETED if completed else Session.STATUS_CANCELLED
     Session.objects.filter(id=session.id, user=request.user).update(
-        status=Session.STATUS_COMPLETED,
+        status=new_status,
         completed=completed
     )
     invalidate_user_stats_cache(request.user)
     return success_response(
-        "Session Completed",
-        {"session_id": session.id, "status": Session.STATUS_COMPLETED},
+        "Session Completed" if completed else "Session Cancelled",
+        {"session_id": session.id, "status": new_status},
     )
 
 
@@ -874,7 +975,7 @@ def get_stats(request):
         except Exception as e:
             logger.warning("Failed to get stats cache: %s", e)
 
-    sessions = Session.objects.filter(user=request.user, status=Session.STATUS_COMPLETED)
+    sessions = Session.objects.filter(user=request.user, completed=True)
     if days is not None:
         since = timezone.now() - timedelta(days=days)
         sessions = sessions.filter(created_at__gte=since)
@@ -888,7 +989,7 @@ def get_stats(request):
     response_data = {
         "total_focus_time": stats["total_focus_time"] or 0,
         "total_sessions": total_sessions,
-        "average_session_time": stats["average_session_time"] or 0,
+        "average_session_time": round(stats["average_session_time"] or 0, 1),
     }
 
     if version is not None:

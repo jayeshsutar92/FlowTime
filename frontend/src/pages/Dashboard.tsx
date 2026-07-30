@@ -3,40 +3,80 @@ import api from "../services/api";
 import { TrendingUp, Activity, History, Calendar, CheckCircle2, Award } from "lucide-react";
 import { cn } from "../lib/utils";
 
+interface HeatmapDay {
+  day: string;
+  date: string;
+  count: number;
+}
+
+interface RhythmBar {
+  day: string;
+  date: string;
+  minutes: number;
+  pct: number;
+}
+
+interface LevelInfo {
+  level: number;
+  total_xp: number;
+  current_level_xp: number;
+  progress_pct: number;
+  completed_sessions: number;
+  sessions_needed: number;
+}
+
 export default function Dashboard() {
+  const [daysFilter, setDaysFilter] = useState<number | "all">(7);
   const [stats, setStats] = useState({ focusTime: "0", sessions: "-", avgFocus: "0", completion: "0" });
-  const [score, setScore] = useState({ score: 0, level: "LOW" });
-  const [insights, setInsights] = useState({ timeSlot: "No data", recommendation: "" });
-  const [heatmap, setHeatmap] = useState<number[]>([]);
+  const [score, setScore] = useState<{ score: number; level: string; level_info?: LevelInfo }>({ score: 0, level: "NO DATA" });
+  const [insights, setInsights] = useState<{ timeSlot: string; recommendation: string; rhythm: RhythmBar[] }>({ timeSlot: "No data", recommendation: "", rhythm: [] });
+  const [heatmap, setHeatmap] = useState<HeatmapDay[]>([]);
 
   useEffect(() => {
     fetchData();
-  }, []);
+  }, [daysFilter]);
 
   const fetchData = async () => {
     try {
+      const tzOffset = new Date().getTimezoneOffset();
+      const queryParam = daysFilter === "all" ? `?tz_offset=${tzOffset}` : `?days=${daysFilter}&tz_offset=${tzOffset}`;
+
       const [statsRes, scoreRes, insightsRes, heatmapRes] = await Promise.all([
-        api.get("/stats/"),
-        api.get("/productivity-score/"),
-        api.get("/insights/"),
-        api.get("/heatmap/")
+        api.get(`/stats/${queryParam}`),
+        api.get(`/productivity-score/${queryParam}`),
+        api.get(`/insights/${queryParam}`),
+        api.get(`/heatmap/${queryParam}`)
       ]);
 
+      const totalFocusMins = statsRes.data.data.total_focus_time || 0;
       setStats({
-        focusTime: (statsRes.data.data.total_focus_time / 60).toFixed(1),
+        focusTime: (totalFocusMins / 60).toFixed(1),
         sessions: statsRes.data.data.total_sessions.toString(),
         avgFocus: insightsRes.data.data.avg_session_length?.toFixed(1) || "0",
         completion: (insightsRes.data.data.completion_rate * 100).toFixed(1)
       });
+
       setScore({
         score: scoreRes.data.data.score,
-        level: scoreRes.data.data.level.toUpperCase()
+        level: scoreRes.data.data.level.toUpperCase(),
+        level_info: scoreRes.data.data.level_info
       });
+
       setInsights({
         timeSlot: insightsRes.data.data.best_focus_time || "No data",
-        recommendation: insightsRes.data.data.recommendation
+        recommendation: insightsRes.data.data.recommendation || "Complete sessions to unlock insights",
+        rhythm: insightsRes.data.data.rhythm || []
       });
-      setHeatmap(heatmapRes.data.data.last_7_days || []);
+
+      if (Array.isArray(heatmapRes.data.data.days)) {
+        setHeatmap(heatmapRes.data.data.days);
+      } else if (Array.isArray(heatmapRes.data.data.last_7_days)) {
+        setHeatmap(heatmapRes.data.data.last_7_days.map((cnt: number, i: number) => ({
+          day: ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"][i] || "",
+          date: "",
+          count: cnt
+        })));
+      }
     } catch (e) {}
   };
 
@@ -48,11 +88,44 @@ export default function Dashboard() {
     return "bg-primary";
   };
 
+  const isNoData = score.level === "NO DATA" || score.level === "NO DATA";
+
   return (
     <main className="pt-24 pb-20 px-4 md:px-margin-desktop max-w-container-max mx-auto">
-      <header className="mb-12">
+      <header className="mb-8 text-center">
         <h1 className="font-headline-lg text-headline-lg md:text-display-xl md:font-display-xl text-on-surface text-center mb-2 tracking-tight">Dashboard</h1>
-        <p className="text-on-surface-variant text-center max-w-2xl mx-auto">Analyze your focus performance and weekly rhythms to optimize your deep work sessions.</p>
+        <p className="text-on-surface-variant text-center max-w-2xl mx-auto mb-6">Analyze your focus performance and weekly rhythms to optimize your deep work sessions.</p>
+
+        {/* Date Range Selector Controls */}
+        <div className="inline-flex items-center gap-1.5 p-1 bg-surface-container rounded-full border border-white/5">
+          <button
+            onClick={() => setDaysFilter(7)}
+            className={cn(
+              "px-4 py-1.5 rounded-full text-xs font-label-sm transition-all",
+              daysFilter === 7 ? "bg-primary text-white font-semibold shadow-md" : "text-on-surface-variant hover:text-on-surface"
+            )}
+          >
+            Last 7 Days
+          </button>
+          <button
+            onClick={() => setDaysFilter(30)}
+            className={cn(
+              "px-4 py-1.5 rounded-full text-xs font-label-sm transition-all",
+              daysFilter === 30 ? "bg-primary text-white font-semibold shadow-md" : "text-on-surface-variant hover:text-on-surface"
+            )}
+          >
+            Last 30 Days
+          </button>
+          <button
+            onClick={() => setDaysFilter("all")}
+            className={cn(
+              "px-4 py-1.5 rounded-full text-xs font-label-sm transition-all",
+              daysFilter === "all" ? "bg-primary text-white font-semibold shadow-md" : "text-on-surface-variant hover:text-on-surface"
+            )}
+          >
+            All Time
+          </button>
+        </div>
       </header>
 
       {/* Top Level Stats */}
@@ -85,13 +158,13 @@ export default function Dashboard() {
           <div className="flex flex-col items-center">
             <span className={cn(
               "text-[120px] font-display-xl font-bold leading-none mb-2 tabular-nums tracking-tighter",
-              score.score < 40 ? "text-error" : score.score < 70 ? "text-tertiary" : "text-primary"
+              isNoData ? "text-on-surface-variant" : score.score < 40 ? "text-error" : score.score < 70 ? "text-tertiary" : "text-primary"
             )}>
               {score.score}
             </span>
             <span className={cn(
               "font-semibold uppercase tracking-widest text-lg mb-4",
-              score.score < 40 ? "text-error" : score.score < 70 ? "text-tertiary" : "text-primary"
+              isNoData ? "text-on-surface-variant" : score.score < 40 ? "text-error" : score.score < 70 ? "text-tertiary" : "text-primary"
             )}>
               {score.level}
             </span>
@@ -152,43 +225,60 @@ export default function Dashboard() {
           </div>
         </div>
         <div className="grid grid-cols-7 gap-4 lg:gap-6">
-          {['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map((day, i) => (
-            <div key={day} className="flex flex-col items-center gap-4 group">
+          {heatmap.map((item, i) => (
+            <div key={item.date || i} className="flex flex-col items-center gap-4 group">
               <div className={cn(
                 "w-full aspect-square rounded-xl border border-white/5 transition-colors duration-500",
-                getHeatmapColor(heatmap[i] || 0)
+                getHeatmapColor(item.count)
               )}></div>
-              <span className="font-label-sm text-[10px] text-on-surface-variant uppercase tracking-widest group-hover:text-primary transition-colors">{day}</span>
+              <span className="font-label-sm text-[10px] text-on-surface-variant uppercase tracking-widest group-hover:text-primary transition-colors">{item.day}</span>
             </div>
           ))}
         </div>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-gutter">
+        {/* Dynamic Level & XP Progress Card */}
         <div className="glass-card rounded-xl p-8 flex flex-col justify-center items-center text-center group overflow-hidden relative">
           <div className="absolute inset-0 bg-gradient-to-t from-primary/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity"></div>
           <Award className="w-16 h-16 text-primary/60 mb-6 group-hover:text-primary transition-colors" strokeWidth={1} />
-          <h3 className="font-headline-lg text-headline-lg-mobile text-on-surface tracking-tight">Level 1 Focus</h3>
-          <p className="text-on-surface-variant text-sm mt-3 leading-relaxed max-w-xs">You are just starting your flow journey. Complete 5 more sessions to reach Level 2.</p>
+          <h3 className="font-headline-lg text-headline-lg-mobile text-on-surface tracking-tight">
+            Level {score.level_info?.level ?? 1} Focus
+          </h3>
+          <p className="text-on-surface-variant text-sm mt-3 leading-relaxed max-w-xs">
+            {score.level_info && score.level_info.completed_sessions > 0
+              ? `Complete sessions to earn XP and reach Level ${(score.level_info.level || 1) + 1}.`
+              : "Complete your first focus session to start earning XP and leveling up."}
+          </p>
           <div className="w-full max-w-[200px] bg-white/5 h-1.5 rounded-full mt-8 overflow-hidden">
-            <div className="bg-primary h-full w-[20%] rounded-full shadow-[0_0_8px_rgba(37,99,235,0.8)]"></div>
+            <div 
+              className="bg-primary h-full rounded-full shadow-[0_0_8px_rgba(37,99,235,0.8)] transition-all duration-500"
+              style={{ width: `${score.level_info?.progress_pct ?? 0}%` }}
+            ></div>
           </div>
-          <span className="text-[10px] font-label-sm text-on-surface-variant mt-3 uppercase tracking-widest">1,200 / 5,000 XP</span>
+          <span className="text-[10px] font-label-sm text-on-surface-variant mt-3 uppercase tracking-widest">
+            {score.level_info?.current_level_xp ?? 0} / 1,000 XP (Total: {score.level_info?.total_xp ?? 0})
+          </span>
         </div>
+
+        {/* Dynamic Rhythm Visualization */}
         <div className="md:col-span-2 glass-card rounded-xl p-8 relative overflow-hidden min-h-[300px]">
           <div className="relative z-10 flex flex-col justify-between h-full">
             <div className="max-w-xs">
               <h3 className="font-headline-lg text-headline-lg-mobile text-on-surface mb-3 tracking-tight">Rhythm Visualization</h3>
-              <p className="text-on-surface-variant text-sm leading-relaxed">A procedural representation of your current work-rest cycle based on historical data.</p>
+              <p className="text-on-surface-variant text-sm leading-relaxed">Daily focus distribution over the past 7 days based on your completed sessions.</p>
             </div>
             <div className="flex gap-3 items-end h-32 mt-8">
-               <div className="flex-1 bg-primary/20 rounded-t-lg h-[15%] hover:h-[20%] transition-all duration-300"></div>
-               <div className="flex-1 bg-primary/40 rounded-t-lg h-[30%] hover:h-[35%] transition-all duration-300"></div>
-               <div className="flex-1 bg-white/5 rounded-t-lg h-[5%] hover:h-[10%] transition-all duration-300"></div>
-               <div className="flex-1 bg-primary/60 rounded-t-lg h-[55%] hover:h-[60%] transition-all duration-300"></div>
-               <div className="flex-1 bg-primary/80 rounded-t-lg h-[80%] shadow-[0_0_15px_rgba(37,99,235,0.5)] hover:h-[85%] transition-all duration-300 transform origin-bottom hover:scale-105"></div>
-               <div className="flex-1 bg-white/5 rounded-t-lg h-[10%] hover:h-[15%] transition-all duration-300"></div>
-               <div className="flex-1 bg-primary/50 rounded-t-lg h-[40%] hover:h-[45%] transition-all duration-300"></div>
+              {insights.rhythm.map((bar, idx) => (
+                <div key={bar.date || idx} className="flex-1 flex flex-col items-center gap-2 h-full justify-end group">
+                  <div
+                    className="w-full bg-primary/60 group-hover:bg-primary rounded-t-lg transition-all duration-300"
+                    style={{ height: `${Math.max(5, bar.pct)}%` }}
+                    title={`${bar.day}: ${bar.minutes} min`}
+                  ></div>
+                  <span className="text-[10px] font-label-sm text-on-surface-variant group-hover:text-primary transition-colors">{bar.day}</span>
+                </div>
+              ))}
             </div>
           </div>
         </div>
