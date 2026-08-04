@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 import { useBlocker } from "react-router-dom";
 import api from "../services/api";
+import { useAuth } from "../contexts/AuthContext";
 import { playWorkCompleteSound, playBreakCompleteSound } from "../lib/sounds";
 import { Play, Pause, RefreshCw, SkipForward, AlertCircle, Sparkles, Zap, Trash2, CheckCircle2, TrendingUp, History, Timer as TimerIcon } from "lucide-react";
 import { cn } from "../lib/utils";
@@ -16,20 +17,29 @@ type Preset = {
 type SessionState = "idle" | "work" | "break";
 
 export default function CustomTimer() {
+  const { userId } = useAuth();
+  const userPrefix = userId ? `flowtime_${userId}_` : "flowtime_";
+  const BREAK_STORAGE_KEY = `${userPrefix}custom_break_state`;
+  const ACTIVE_TIMER_TYPE_KEY = `${userPrefix}active_timer_type`;
+  const WORK_DURATION_KEY = `${userPrefix}custom_base_work_duration`;
+  const BREAK_DURATION_KEY = `${userPrefix}custom_base_break_duration`;
+  const TOTAL_SESSIONS_KEY = `${userPrefix}custom_base_total_sessions`;
+  const LONG_BREAK_KEY = `${userPrefix}custom_base_long_break`;
+
   const [baseWorkDuration, setBaseWorkDuration] = useState(() => {
-    const saved = localStorage.getItem("flowtime_custom_base_work_duration");
+    const saved = localStorage.getItem(WORK_DURATION_KEY);
     return saved ? Number(saved) : 25;
   });
   const [baseBreakDuration, setBaseBreakDuration] = useState(() => {
-    const saved = localStorage.getItem("flowtime_custom_base_break_duration");
+    const saved = localStorage.getItem(BREAK_DURATION_KEY);
     return saved ? Number(saved) : 5;
   });
   const [baseTotalSessions, setBaseTotalSessions] = useState(() => {
-    const saved = localStorage.getItem("flowtime_custom_base_total_sessions");
+    const saved = localStorage.getItem(TOTAL_SESSIONS_KEY);
     return saved ? Number(saved) : 4;
   });
   const [baseLongBreak, setBaseLongBreak] = useState(() => {
-    const saved = localStorage.getItem("flowtime_custom_base_long_break");
+    const saved = localStorage.getItem(LONG_BREAK_KEY);
     return saved ? Number(saved) : 15;
   });
 
@@ -56,7 +66,31 @@ export default function CustomTimer() {
 
   const timerRef = useRef<NodeJS.Timeout | null>(null);
   const breakSoundPlayedRef = useRef(false);
-  const BREAK_STORAGE_KEY = "flowtime_custom_break_state";
+
+  useEffect(() => {
+    if (!userId) return;
+    const savedWork = localStorage.getItem(WORK_DURATION_KEY);
+    if (savedWork) {
+      setWorkDuration(Number(savedWork));
+      setBaseWorkDuration(Number(savedWork));
+      if (sessionState === "idle") setTimeLeft(Number(savedWork) * 60);
+    }
+    const savedBreak = localStorage.getItem(BREAK_DURATION_KEY);
+    if (savedBreak) {
+      setBreakDuration(Number(savedBreak));
+      setBaseBreakDuration(Number(savedBreak));
+    }
+    const savedTotal = localStorage.getItem(TOTAL_SESSIONS_KEY);
+    if (savedTotal) {
+      setTotalSessions(Number(savedTotal));
+      setBaseTotalSessions(Number(savedTotal));
+    }
+    const savedLong = localStorage.getItem(LONG_BREAK_KEY);
+    if (savedLong) {
+      setLongBreak(Number(savedLong));
+      setBaseLongBreak(Number(savedLong));
+    }
+  }, [userId]);
 
   const blocker = useBlocker(
     ({ currentValue, nextLocation }) =>
@@ -95,7 +129,7 @@ export default function CustomTimer() {
     setBreakStartAt(null);
     setBreakDurationSeconds(null);
     clearBreakState();
-    localStorage.removeItem("flowtime_active_timer_type");
+    localStorage.removeItem(ACTIVE_TIMER_TYPE_KEY);
     blocker.proceed?.();
   };
 
@@ -254,7 +288,7 @@ export default function CustomTimer() {
             setBreakStartAt(null);
             setBreakDurationSeconds(null);
             clearBreakState();
-            localStorage.removeItem("flowtime_active_timer_type");
+            localStorage.removeItem(ACTIVE_TIMER_TYPE_KEY);
           }
         }
       }
@@ -333,7 +367,7 @@ export default function CustomTimer() {
       setTimeLeft(effectiveWorkDuration * 60);
       setIsActive(true);
       setCurrentSession(targetSession);
-      localStorage.setItem("flowtime_active_timer_type", "custom");
+      localStorage.setItem(ACTIVE_TIMER_TYPE_KEY, "custom");
     } catch (e) {
       console.error(e);
     }
@@ -383,7 +417,7 @@ export default function CustomTimer() {
       setBreakStartAt(null);
       setBreakDurationSeconds(null);
       clearBreakState();
-      localStorage.removeItem("flowtime_active_timer_type");
+      localStorage.removeItem(ACTIVE_TIMER_TYPE_KEY);
     } else if (sessionState === "break") {
       const durationSeconds = breakDuration * 60;
       const startAt = Date.now();
@@ -420,7 +454,7 @@ export default function CustomTimer() {
         setBreakStartAt(null);
         setBreakDurationSeconds(null);
         clearBreakState();
-        localStorage.removeItem("flowtime_active_timer_type");
+        localStorage.removeItem(ACTIVE_TIMER_TYPE_KEY);
       }
     }
   };
@@ -445,15 +479,15 @@ export default function CustomTimer() {
   const usePreset = (p: Preset) => {
     setWorkDuration(p.work_duration);
     setBaseWorkDuration(p.work_duration);
-    localStorage.setItem("flowtime_custom_base_work_duration", String(p.work_duration));
+    localStorage.setItem(WORK_DURATION_KEY, String(p.work_duration));
 
     setBreakDuration(p.short_break);
     setBaseBreakDuration(p.short_break);
-    localStorage.setItem("flowtime_custom_base_break_duration", String(p.short_break));
+    localStorage.setItem(BREAK_DURATION_KEY, String(p.short_break));
 
     setLongBreak(p.long_break);
     setBaseLongBreak(p.long_break);
-    localStorage.setItem("flowtime_custom_base_long_break", String(p.long_break));
+    localStorage.setItem(LONG_BREAK_KEY, String(p.long_break));
 
     setTimeLeft(p.work_duration * 60);
   };
@@ -534,7 +568,7 @@ export default function CustomTimer() {
                     const val = Number(e.target.value);
                     setWorkDuration(val);
                     setBaseWorkDuration(val);
-                    localStorage.setItem("flowtime_custom_base_work_duration", String(val));
+                    localStorage.setItem(WORK_DURATION_KEY, String(val));
                     if (sessionState === "idle") setTimeLeft(val * 60);
                   }}
                   disabled={sessionState !== "idle"}
@@ -551,7 +585,7 @@ export default function CustomTimer() {
                     const val = Number(e.target.value);
                     setBreakDuration(val);
                     setBaseBreakDuration(val);
-                    localStorage.setItem("flowtime_custom_base_break_duration", String(val));
+                    localStorage.setItem(BREAK_DURATION_KEY, String(val));
                   }}
                   disabled={sessionState !== "idle"}
                   className="w-full bg-[#0F141F] border border-white/5 rounded-xl px-4 py-3 text-white outline-none focus:border-[#2563EB]/50 transition-colors"
@@ -568,7 +602,7 @@ export default function CustomTimer() {
                       const val = Number(e.target.value);
                       setTotalSessions(val);
                       setBaseTotalSessions(val);
-                      localStorage.setItem("flowtime_custom_base_total_sessions", String(val));
+                      localStorage.setItem(TOTAL_SESSIONS_KEY, String(val));
                     }}
                     disabled={sessionState !== "idle"}
                     className="w-full bg-[#0F141F] border border-white/5 rounded-xl px-4 py-3 text-white outline-none focus:border-[#2563EB]/50 transition-colors"
@@ -583,7 +617,7 @@ export default function CustomTimer() {
                       const val = Number(e.target.value);
                       setLongBreak(val);
                       setBaseLongBreak(val);
-                      localStorage.setItem("flowtime_custom_base_long_break", String(val));
+                      localStorage.setItem(LONG_BREAK_KEY, String(val));
                     }}
                     disabled={sessionState !== "idle"}
                     className="w-full bg-[#0F141F] border border-white/5 rounded-xl px-4 py-3 text-white outline-none focus:border-[#2563EB]/50 transition-colors"

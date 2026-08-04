@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 import { useBlocker } from "react-router-dom";
 import api from "../services/api";
+import { useAuth } from "../contexts/AuthContext";
 import { playWorkCompleteSound, playBreakCompleteSound } from "../lib/sounds";
 import { Play, Pause, RefreshCw, SkipForward, AlertCircle, Sparkles, Zap, Trash2, CheckCircle2, TrendingUp, History, Timer as TimerIcon } from "lucide-react";
 import { cn } from "../lib/utils";
@@ -16,6 +17,11 @@ type Preset = {
 type SessionState = "idle" | "work" | "break";
 
 export default function Timer() {
+  const { userId } = useAuth();
+  const userPrefix = userId ? `flowtime_${userId}_` : "flowtime_";
+  const BREAK_STORAGE_KEY = `${userPrefix}default_break_state`;
+  const ACTIVE_TIMER_TYPE_KEY = `${userPrefix}active_timer_type`;
+
   const [workDuration, setWorkDuration] = useState(25);
   const [breakDuration, setBreakDuration] = useState(5);
   const [totalSessions, setTotalSessions] = useState(4);
@@ -39,7 +45,6 @@ export default function Timer() {
 
   const timerRef = useRef<NodeJS.Timeout | null>(null);
   const breakSoundPlayedRef = useRef(false);
-  const BREAK_STORAGE_KEY = "flowtime_default_break_state";
 
   const blocker = useBlocker(
     ({ currentValue, nextLocation }) =>
@@ -81,7 +86,7 @@ export default function Timer() {
     setBreakStartAt(null);
     setBreakDurationSeconds(null);
     clearBreakState();
-    localStorage.removeItem("flowtime_active_timer_type");
+    localStorage.removeItem(ACTIVE_TIMER_TYPE_KEY);
     blocker.proceed?.();
   };
 
@@ -244,7 +249,7 @@ export default function Timer() {
             setBreakStartAt(null);
             setBreakDurationSeconds(null);
             clearBreakState();
-            localStorage.removeItem("flowtime_active_timer_type");
+            localStorage.removeItem(ACTIVE_TIMER_TYPE_KEY);
           }
         }
       }
@@ -323,7 +328,7 @@ export default function Timer() {
       setTimeLeft(effectiveWorkDuration * 60);
       setIsActive(true);
       setCurrentSession(targetSession);
-      localStorage.setItem("flowtime_active_timer_type", "default");
+      localStorage.setItem(ACTIVE_TIMER_TYPE_KEY, "default");
     } catch (e) {
       console.error(e);
     }
@@ -373,7 +378,7 @@ export default function Timer() {
       setBreakStartAt(null);
       setBreakDurationSeconds(null);
       clearBreakState();
-      localStorage.removeItem("flowtime_active_timer_type");
+      localStorage.removeItem(ACTIVE_TIMER_TYPE_KEY);
     } else if (sessionState === "break") {
       const durationSeconds = breakDuration * 60;
       const startAt = Date.now();
@@ -410,7 +415,7 @@ export default function Timer() {
         setBreakStartAt(null);
         setBreakDurationSeconds(null);
         clearBreakState();
-        localStorage.removeItem("flowtime_active_timer_type");
+        localStorage.removeItem(ACTIVE_TIMER_TYPE_KEY);
       }
     }
   };

@@ -1,11 +1,30 @@
 import React, { createContext, useContext, useState, useEffect } from "react";
 import api, { ensureCsrfCookie, resetCsrfState } from "../services/api";
 
+export function getUserIdFromToken(token: string | null): string | null {
+  if (!token) return null;
+  try {
+    const base64Url = token.split(".")[1];
+    const base64 = base64Url.replace(/-/g, "+").replace(/_/g, "/");
+    const jsonPayload = decodeURIComponent(
+      atob(base64)
+        .split("")
+        .map((c) => "%" + ("00" + c.charCodeAt(0).toString(16)).slice(-2))
+        .join("")
+    );
+    const parsed = JSON.parse(jsonPayload);
+    return parsed.user_id ? String(parsed.user_id) : null;
+  } catch {
+    return null;
+  }
+}
+
 interface AuthContextType {
   token: string | null;
   refreshToken: string | null;
   isAuthenticated: boolean;
   isAdmin: boolean;
+  userId: string | null;
   login: (accessToken: string, refreshToken: string, isAdmin?: boolean) => void;
   logout: () => void;
 }
@@ -16,6 +35,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [token, setToken] = useState<string | null>(localStorage.getItem("flowtime_token"));
   const [refreshToken, setRefreshToken] = useState<string | null>(localStorage.getItem("flowtime_refresh"));
   const [isAdmin, setIsAdmin] = useState<boolean>(() => localStorage.getItem("flowtime_is_admin") === "true");
+
+  const userId = getUserIdFromToken(token);
 
   const login = (accessToken: string, newRefreshToken: string, admin?: boolean) => {
     localStorage.setItem("flowtime_token", accessToken);
@@ -33,9 +54,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     if (currentRefresh) {
       api.post("/logout/", { refresh: currentRefresh }).catch(() => undefined);
     }
-    localStorage.removeItem("flowtime_token");
-    localStorage.removeItem("flowtime_refresh");
-    localStorage.removeItem("flowtime_is_admin");
+    Object.keys(localStorage).forEach((key) => {
+      if (key.startsWith("flowtime_") && key !== "flowtime_theme") {
+        localStorage.removeItem(key);
+      }
+    });
     resetCsrfState();
     setToken(null);
     setRefreshToken(null);
@@ -66,7 +89,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   }, [token]);
 
   return (
-    <AuthContext.Provider value={{ token, refreshToken, isAuthenticated: !!token, isAdmin, login, logout }}>
+    <AuthContext.Provider value={{ token, refreshToken, isAuthenticated: !!token, isAdmin, userId, login, logout }}>
       {children}
     </AuthContext.Provider>
   );
