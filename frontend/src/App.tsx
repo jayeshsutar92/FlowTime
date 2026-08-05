@@ -12,6 +12,7 @@ import TimerSelection from "./pages/TimerSelection";
 import DefaultTimer from "./pages/DefaultTimer";
 import CustomTimer from "./pages/CustomTimer";
 import Dashboard from "./pages/Dashboard";
+import Contributions from "./pages/Contributions";
 import Presets from "./pages/Presets";
 import Music from "./pages/Music";
 import Admin from "./pages/Admin";
@@ -55,6 +56,7 @@ const RootRoutes = () => (
                     <Route path="/timer/default" element={<DefaultTimer />} />
                     <Route path="/timer/custom" element={<CustomTimer />} />
                     <Route path="/dashboard" element={<Dashboard />} />
+                    <Route path="/contributions" element={<Contributions />} />
                     <Route path="/presets" element={<Presets />} />
                     <Route path="/music" element={<Music />} />
                     <Route path="/admin" element={<AdminRoute><Admin /></AdminRoute>} />

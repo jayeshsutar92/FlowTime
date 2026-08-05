@@ -12,6 +12,7 @@ export default function TopNav() {
   const links = [
     { name: "Timer", path: "/timer" },
     { name: "Dashboard", path: "/dashboard" },
+    { name: "Contributions", path: "/contributions" },
     { name: "Presets", path: "/presets" },
     { name: "Focus Ambience", path: "/music" },
     ...(isAdmin ? [{ name: "Admin", path: "/admin" }] : []),
