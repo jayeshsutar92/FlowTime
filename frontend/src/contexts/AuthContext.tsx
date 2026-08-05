@@ -77,7 +77,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const verifySession = async () => {
       if (!token) return;
       try {
-        await api.get("/sessions/");
+        await api.get("/sessions/active/");
       } catch (err: any) {
         const status = err?.response?.status;
         if (status === 401 || status === 403) {

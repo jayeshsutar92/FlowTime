@@ -176,10 +176,8 @@ export default function CustomTimer() {
     fetchPresets();
     fetchStats();
 
-    api.get("/sessions/").then((res) => {
-      const running = res.data.data.find((s: any) => s.status === "running" && s.timer_type === "custom");
-      const paused = res.data.data.find((s: any) => s.status === "paused" && s.timer_type === "custom");
-      const activeSession = running || paused;
+    api.get("/sessions/active/?timer_type=custom").then((res) => {
+      const activeSession = res.data.data;
 
       if (activeSession) {
         const startAtMs = new Date(activeSession.created_at).getTime();

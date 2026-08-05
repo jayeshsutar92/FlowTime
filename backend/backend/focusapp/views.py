@@ -329,7 +329,30 @@ def get_session_or_404(session_id, user):
         return None
 
 
+def expire_orphaned_sessions(user=None):
+    now = timezone.now()
+    running_sessions = Session.objects.filter(status=Session.STATUS_RUNNING)
+    if user:
+        running_sessions = running_sessions.filter(user=user)
+
+    expired_ids = []
+    for session in running_sessions:
+        allowed_seconds = (session.work_duration * 60) + (session.paused_seconds or 0)
+        elapsed_seconds = (now - session.created_at).total_seconds()
+        if elapsed_seconds >= allowed_seconds:
+            expired_ids.append(session.id)
+
+    if expired_ids:
+        Session.objects.filter(id__in=expired_ids).update(
+            status=Session.STATUS_CANCELLED,
+            completed=False,
+        )
+        if user:
+            invalidate_user_stats_cache(user)
+
+
 def complete_running_sessions(user, timer_type="default"):
+    expire_orphaned_sessions(user)
     return Session.objects.filter(user=user, status=Session.STATUS_RUNNING, timer_type=timer_type).update(
         status=Session.STATUS_CANCELLED,
         completed=False,
@@ -1051,7 +1074,28 @@ def get_presets(request):
 
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
+def get_active_session(request):
+    expire_orphaned_sessions(request.user)
+    timer_type = request.query_params.get("timer_type")
+
+    sessions = Session.objects.filter(
+        user=request.user,
+        status__in=[Session.STATUS_RUNNING, Session.STATUS_PAUSED],
+    )
+    if timer_type:
+        sessions = sessions.filter(timer_type=timer_type)
+
+    active_session = sessions.order_by("-created_at").first()
+    if active_session:
+        serializer = SessionSerializer(active_session)
+        return success_response("Active session fetched successfully.", serializer.data)
+    return success_response("No active session.", None)
+
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
 def get_sessions(request):
+    expire_orphaned_sessions(request.user)
     serializer = SessionSerializer(Session.objects.filter(user=request.user), many=True)
     return success_response("Sessions fetched successfully.", serializer.data)
 

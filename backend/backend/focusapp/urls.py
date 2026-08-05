@@ -13,6 +13,7 @@ urlpatterns = [
     path('pause-session/', views.pause_session),
     path('resume-session/', views.resume_session),
     path('end-session/', views.end_session),
+    path('sessions/active/', views.get_active_session),
     path('sessions/', views.get_sessions),
     path('stats/', views.get_stats),
     path('insights/', views.get_insights),
