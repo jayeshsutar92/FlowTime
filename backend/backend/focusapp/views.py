@@ -630,9 +630,11 @@ def get_heatmap(request):
     if isinstance(days, str):
         return error_response(days, status.HTTP_400_BAD_REQUEST)
 
+    tz_offset_min = int(request.query_params.get("tz_offset", 0))
+
     version = get_user_cache_version(request.user)
     if version is not None:
-        cache_key = f"heatmap:{request.user.id}:{days}:v{version}"
+        cache_key = f"heatmap:{request.user.id}:{days}:{tz_offset_min}:v{version}"
         try:
             cached_data = cache.get(cache_key)
             if cached_data is not None:
@@ -640,7 +642,6 @@ def get_heatmap(request):
         except Exception as e:
             logger.warning("Failed to get heatmap cache: %s", e)
 
-    tz_offset_min = int(request.query_params.get("tz_offset", 0))
     user_today = (timezone.now() - timedelta(minutes=tz_offset_min)).date()
 
     num_days = days if days is not None else 7
@@ -680,7 +681,7 @@ def get_heatmap(request):
 
     if version is not None:
         try:
-            cache_key = f"heatmap:{request.user.id}:{days}:v{version}"
+            cache_key = f"heatmap:{request.user.id}:{days}:{tz_offset_min}:v{version}"
             cache.set(cache_key, response_data, timeout=300)
         except Exception as e:
             logger.warning("Failed to set heatmap cache: %s", e)
@@ -695,9 +696,11 @@ def get_insights(request):
     if isinstance(days, str):
         return error_response(days, status.HTTP_400_BAD_REQUEST)
 
+    tz_offset_min = int(request.query_params.get("tz_offset", 0))
+
     version = get_user_cache_version(request.user)
     if version is not None:
-        cache_key = f"insights:{request.user.id}:{days}:v{version}"
+        cache_key = f"insights:{request.user.id}:{days}:{tz_offset_min}:v{version}"
         try:
             cached_data = cache.get(cache_key)
             if cached_data is not None:
@@ -761,7 +764,7 @@ def get_insights(request):
 
     if version is not None:
         try:
-            cache_key = f"insights:{request.user.id}:{days}:v{version}"
+            cache_key = f"insights:{request.user.id}:{days}:{tz_offset_min}:v{version}"
             cache.set(cache_key, response_data, timeout=300)
         except Exception as e:
             logger.warning("Failed to set insights cache: %s", e)
