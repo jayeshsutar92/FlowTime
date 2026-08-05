@@ -4,7 +4,7 @@ from django.core.exceptions import ValidationError as DjangoValidationError
 from django.db.models import Q
 from rest_framework import serializers
 
-from .models import MusicTrack, Preset, Session, Playlist, PlaylistTrack, FavoriteTrack
+from .models import MusicTrack, Preset, Session, Playlist, PlaylistTrack, FavoriteTrack, DailyContribution
 
 
 class MusicTrackSerializer(serializers.ModelSerializer):
@@ -241,4 +241,31 @@ class AdminUserSerializer(serializers.Serializer):
     email = serializers.EmailField(read_only=True)
     date_joined = serializers.DateTimeField(read_only=True)
     is_staff = serializers.BooleanField(read_only=True)
+
+
+class DailyContributionSerializer(serializers.ModelSerializer):
+    points = serializers.ReadOnlyField()
+
+    class Meta:
+        model = DailyContribution
+        fields = [
+            "id",
+            "title",
+            "notes",
+            "scheduled_date",
+            "weight",
+            "completed",
+            "completed_at",
+            "created_at",
+            "updated_at",
+            "points",
+        ]
+        read_only_fields = [
+            "id",
+            "completed",
+            "completed_at",
+            "created_at",
+            "updated_at",
+            "points",
+        ]
 

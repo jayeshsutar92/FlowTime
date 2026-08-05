@@ -22,7 +22,7 @@ from rest_framework.response import Response
 from rest_framework.decorators import api_view, permission_classes, throttle_classes
 from rest_framework.throttling import ScopedRateThrottle
 
-from .models import MusicTrack, OTPVerification, Preset, Session, Playlist, PlaylistTrack, FavoriteTrack
+from .models import MusicTrack, OTPVerification, Preset, Session, Playlist, PlaylistTrack, FavoriteTrack, DailyContribution
 from .serializers import (
     AdminUserSerializer,
     ForgotPasswordSerializer,
@@ -39,7 +39,9 @@ from .serializers import (
     PlaylistSerializer,
     PlaylistTrackSerializer,
     FavoriteTrackSerializer,
+    DailyContributionSerializer,
 )
+
 
 logger = logging.getLogger(__name__)
 User = get_user_model()
@@ -1730,3 +1732,276 @@ def admin_delete_user(request, user_id):
     target_user.delete()
     logger.info("Admin %s deleted user %s (id=%s)", request.user.username, username, user_id)
     return success_response("User deleted", {"id": user_id, "username": username})
+
+
+# -----------------------------------------------------------------------------
+# Daily Contributions
+# -----------------------------------------------------------------------------
+
+def get_user_contrib_cache_key(user):
+    # Fetch a version specific to the user, default to 1
+    version = cache.get(f"user_{user.id}_contrib_cache_version", 1)
+    return f"daily_contributions_{user.id}_v{version}"
+
+
+def invalidate_user_contrib_cache(user):
+    # Increment the version to invalidate old cache
+    version = cache.get(f"user_{user.id}_contrib_cache_version", 1)
+    cache.set(f"user_{user.id}_contrib_cache_version", version + 1, timeout=86400 * 30)
+
+
+@api_view(["GET", "POST"])
+@permission_classes([IsAuthenticated])
+def contributions_collection(request):
+    user = request.user
+    if request.method == "GET":
+        contributions = DailyContribution.objects.filter(user=user)
+        serializer = DailyContributionSerializer(contributions, many=True)
+        return success_response("Contributions fetched", serializer.data)
+
+    elif request.method == "POST":
+        serializer = DailyContributionSerializer(data=request.data)
+        if serializer.is_valid():
+            serializer.save(user=user)
+            invalidate_user_contrib_cache(user)
+            return success_response("Contribution created", serializer.data, status.HTTP_201_CREATED)
+        return error_response(serializer.errors, status.HTTP_400_BAD_REQUEST)
+
+
+@api_view(["GET", "PUT", "PATCH", "DELETE"])
+@permission_classes([IsAuthenticated])
+def contribution_detail(request, pk):
+    user = request.user
+    try:
+        contribution = DailyContribution.objects.get(pk=pk, user=user)
+    except DailyContribution.DoesNotExist:
+        return error_response("Contribution not found", status.HTTP_404_NOT_FOUND)
+
+    if request.method == "GET":
+        serializer = DailyContributionSerializer(contribution)
+        return success_response("Contribution fetched", serializer.data)
+
+    elif request.method in ["PUT", "PATCH"]:
+        partial = request.method == "PATCH"
+        serializer = DailyContributionSerializer(contribution, data=request.data, partial=partial)
+        if serializer.is_valid():
+            serializer.save()
+            invalidate_user_contrib_cache(user)
+            return success_response("Contribution updated", serializer.data)
+        return error_response(serializer.errors, status.HTTP_400_BAD_REQUEST)
+
+    elif request.method == "DELETE":
+        contribution.delete()
+        invalidate_user_contrib_cache(user)
+        return success_response("Contribution deleted", None)
+
+
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
+def mark_contribution_complete(request, pk):
+    user = request.user
+    try:
+        contribution = DailyContribution.objects.get(pk=pk, user=user)
+    except DailyContribution.DoesNotExist:
+        return error_response("Contribution not found", status.HTTP_404_NOT_FOUND)
+
+    contribution.mark_completed()
+    invalidate_user_contrib_cache(user)
+    serializer = DailyContributionSerializer(contribution)
+    return success_response("Contribution marked complete", serializer.data)
+
+
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
+def mark_contribution_uncomplete(request, pk):
+    user = request.user
+    try:
+        contribution = DailyContribution.objects.get(pk=pk, user=user)
+    except DailyContribution.DoesNotExist:
+        return error_response("Contribution not found", status.HTTP_404_NOT_FOUND)
+
+    contribution.mark_uncompleted()
+    invalidate_user_contrib_cache(user)
+    serializer = DailyContributionSerializer(contribution)
+    return success_response("Contribution marked uncomplete", serializer.data)
+
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def get_daily_contributions(request):
+    user = request.user
+    date_str = request.query_params.get("date")
+    if date_str:
+        try:
+            target_date = timezone.datetime.strptime(date_str, "%Y-%m-%d").date()
+        except ValueError:
+            return error_response("Invalid date format, use YYYY-MM-DD", status.HTTP_400_BAD_REQUEST)
+    else:
+        target_date = timezone.localdate()
+
+    contributions = DailyContribution.objects.filter(user=user, scheduled_date=target_date)
+    serializer = DailyContributionSerializer(contributions, many=True)
+    
+    total = contributions.count()
+    completed = contributions.filter(completed=True).count()
+    completion_rate = round((completed / total * 100), 2) if total > 0 else 0
+
+    return success_response(
+        "Daily contributions fetched",
+        {
+            "date": target_date.strftime("%Y-%m-%d"),
+            "total": total,
+            "completed": completed,
+            "completion_rate": completion_rate,
+            "contributions": serializer.data,
+        }
+    )
+
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def get_monthly_contributions(request):
+    user = request.user
+    year = request.query_params.get("year")
+    month = request.query_params.get("month")
+
+    if not year or not month:
+        now = timezone.localdate()
+        year = now.year
+        month = now.month
+
+    try:
+        year = int(year)
+        month = int(month)
+    except ValueError:
+        return error_response("Invalid year or month", status.HTTP_400_BAD_REQUEST)
+
+    contributions = DailyContribution.objects.filter(
+        user=user,
+        scheduled_date__year=year,
+        scheduled_date__month=month
+    )
+    serializer = DailyContributionSerializer(contributions, many=True)
+    return success_response("Monthly contributions fetched", serializer.data)
+
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def get_contribution_heatmap(request):
+    user = request.user
+    days = int(request.query_params.get("days", 30))
+    
+    cache_key = f"{get_user_contrib_cache_key(user)}_heatmap_{days}"
+    cached_data = cache.get(cache_key)
+    if cached_data is not None:
+        return success_response("Heatmap fetched (cached)", cached_data)
+
+    end_date = timezone.localdate()
+    start_date = end_date - timedelta(days=days - 1)
+
+    contributions = DailyContribution.objects.filter(
+        user=user,
+        scheduled_date__gte=start_date,
+        scheduled_date__lte=end_date,
+        completed=True
+    ).values("scheduled_date").annotate(
+        count=Count("id")
+    ).order_by("scheduled_date")
+
+    heatmap_data = {
+        item["scheduled_date"].strftime("%Y-%m-%d"): item["count"]
+        for item in contributions
+    }
+
+    cache.set(cache_key, heatmap_data, timeout=3600)
+    return success_response("Heatmap fetched", heatmap_data)
+
+
+def calculate_contribution_streaks(user):
+    contributions = DailyContribution.objects.filter(
+        user=user, completed=True
+    ).values_list("scheduled_date", flat=True).distinct().order_by("-scheduled_date")
+
+    if not contributions:
+        return {"current_streak": 0, "longest_streak": 0}
+
+    dates = list(contributions)
+    today = timezone.localdate()
+    yesterday = today - timedelta(days=1)
+
+    current_streak = 0
+    longest_streak = 0
+    temp_streak = 1
+
+    # Calculate current streak
+    if dates[0] == today or dates[0] == yesterday:
+        current_streak = 1
+        for i in range(1, len(dates)):
+            if (dates[i-1] - dates[i]).days == 1:
+                current_streak += 1
+            else:
+                break
+    
+    # Calculate longest streak
+    if len(dates) > 0:
+        longest_streak = 1
+        temp_streak = 1
+        for i in range(1, len(dates)):
+            if (dates[i-1] - dates[i]).days == 1:
+                temp_streak += 1
+                longest_streak = max(longest_streak, temp_streak)
+            else:
+                temp_streak = 1
+
+    return {
+        "current_streak": current_streak,
+        "longest_streak": max(longest_streak, current_streak)
+    }
+
+
+def calculate_best_weekday(user):
+    contributions = DailyContribution.objects.filter(user=user, completed=True).values_list("scheduled_date", flat=True)
+    if not contributions:
+        return None
+    counts = {}
+    for d in contributions:
+        wd = d.strftime("%A")
+        counts[wd] = counts.get(wd, 0) + 1
+    
+    if not counts:
+        return None
+    return max(counts, key=counts.get)
+
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def get_contribution_analytics(request):
+    user = request.user
+    cache_key = f"{get_user_contrib_cache_key(user)}_analytics"
+    cached_data = cache.get(cache_key)
+    if cached_data is not None:
+        return success_response("Analytics fetched (cached)", cached_data)
+
+    total_contributions = DailyContribution.objects.filter(user=user).count()
+    completed_contributions = DailyContribution.objects.filter(user=user, completed=True)
+    completed_count = completed_contributions.count()
+    
+    completion_rate = round((completed_count / total_contributions * 100), 2) if total_contributions > 0 else 0
+
+    points = sum(c.points for c in completed_contributions)
+    
+    streaks = calculate_contribution_streaks(user)
+    best_weekday = calculate_best_weekday(user)
+
+    data = {
+        "total": total_contributions,
+        "completed": completed_count,
+        "completion_rate": completion_rate,
+        "total_points": points,
+        "current_streak": streaks["current_streak"],
+        "longest_streak": streaks["longest_streak"],
+        "best_weekday": best_weekday,
+    }
+
+    cache.set(cache_key, data, timeout=3600)
+    return success_response("Analytics fetched", data)

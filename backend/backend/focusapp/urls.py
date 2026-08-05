@@ -39,6 +39,15 @@ urlpatterns = [
     path('music/queue/shuffle/', views.toggle_shuffle),
     path('music/queue/repeat/', views.set_repeat),
     path('music/queue/state/', views.playback_state),
+    # Daily Contributions
+    path('contributions/', views.contributions_collection),
+    path('contributions/<int:pk>/', views.contribution_detail),
+    path('contributions/<int:pk>/complete/', views.mark_contribution_complete),
+    path('contributions/<int:pk>/uncomplete/', views.mark_contribution_uncomplete),
+    path('contributions/daily/', views.get_daily_contributions),
+    path('contributions/monthly/', views.get_monthly_contributions),
+    path('contributions/heatmap/', views.get_contribution_heatmap),
+    path('contributions/analytics/', views.get_contribution_analytics),
     # Admin management
     path('admin/users/', views.admin_list_users),
     path('admin/users/count/', views.admin_user_count),

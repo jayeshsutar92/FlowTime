@@ -1,5 +1,6 @@
 from django.conf import settings
 from django.db import models
+from django.utils import timezone
 
 
 class Session(models.Model):
@@ -188,3 +189,63 @@ class FavoriteTrack(models.Model):
 
     def __str__(self):
         return f"{self.user.username} favorited {self.track.name}"
+
+
+class DailyContribution(models.Model):
+    WEIGHT_LOW = "low"
+    WEIGHT_NORMAL = "normal"
+    WEIGHT_HIGH = "high"
+    WEIGHT_CHOICES = [
+        (WEIGHT_LOW, "Low"),
+        (WEIGHT_NORMAL, "Normal"),
+        (WEIGHT_HIGH, "High"),
+    ]
+
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="daily_contributions",
+    )
+    title = models.CharField(max_length=255)
+    notes = models.TextField(blank=True, default="")
+    scheduled_date = models.DateField(default=timezone.now)
+    weight = models.CharField(
+        max_length=10,
+        choices=WEIGHT_CHOICES,
+        default=WEIGHT_NORMAL,
+    )
+    completed = models.BooleanField(default=False)
+    completed_at = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["-scheduled_date", "-created_at"]
+        indexes = [
+            models.Index(fields=["user", "scheduled_date"]),
+            models.Index(fields=["user", "completed"]),
+        ]
+
+    @property
+    def points(self):
+        weight_map = {
+            self.WEIGHT_LOW: 1,
+            self.WEIGHT_NORMAL: 2,
+            self.WEIGHT_HIGH: 3,
+        }
+        return weight_map.get(self.weight, 2)
+
+    def mark_completed(self):
+        if not self.completed:
+            self.completed = True
+            self.completed_at = timezone.now()
+            self.save(update_fields=["completed", "completed_at", "updated_at"])
+
+    def mark_uncompleted(self):
+        if self.completed:
+            self.completed = False
+            self.completed_at = None
+            self.save(update_fields=["completed", "completed_at", "updated_at"])
+
+    def __str__(self):
+        return f"{self.user.username} - {self.title} on {self.scheduled_date}"
