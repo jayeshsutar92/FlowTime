@@ -21,11 +21,12 @@ def wait_for_database() -> None:
             print("Database is ready.")
             return
         except OperationalError as exc:
+            connections["default"].close()
             if attempt == max_attempts:
                 print(f"Database is not ready after {max_attempts} attempts: {exc}", file=sys.stderr)
                 raise
 
-            print(f"Waiting for database... attempt {attempt}/{max_attempts}")
+            print(f"Waiting for database... attempt {attempt}/{max_attempts} - Error: {exc}")
             time.sleep(delay)
 
 
