@@ -34,28 +34,28 @@ export interface DailyContributionsSummary {
 const noCacheHeaders = { headers: { "Cache-Control": "no-cache", "Pragma": "no-cache", "Expires": "0" } };
 
 export const getContributions = async () => {
-  const { data } = await api.get("/contributions/", noCacheHeaders);
+  const { data } = await api.get(`/contributions/?_t=${Date.now()}`, noCacheHeaders);
   return data.data as DailyContribution[];
 };
 
 export const getDailyContributions = async (date?: string) => {
-  const query = date ? `?date=${date}` : "";
+  const query = date ? `?date=${date}&_t=${Date.now()}` : `?_t=${Date.now()}`;
   const { data } = await api.get(`/contributions/daily/${query}`, noCacheHeaders);
   return data.data as DailyContributionsSummary;
 };
 
 export const getMonthlyContributions = async (year: number, month: number) => {
-  const { data } = await api.get(`/contributions/monthly/?year=${year}&month=${month}`, noCacheHeaders);
+  const { data } = await api.get(`/contributions/monthly/?year=${year}&month=${month}&_t=${Date.now()}`, noCacheHeaders);
   return data.data as DailyContribution[];
 };
 
 export const getContributionHeatmap = async (days: number = 365) => {
-  const { data } = await api.get(`/contributions/heatmap/?days=${days}`, noCacheHeaders);
+  const { data } = await api.get(`/contributions/heatmap/?days=${days}&_t=${Date.now()}`, noCacheHeaders);
   return data.data as Record<string, number>;
 };
 
 export const getContributionAnalytics = async () => {
-  const { data } = await api.get("/contributions/analytics/", noCacheHeaders);
+  const { data } = await api.get(`/contributions/analytics/?_t=${Date.now()}`, noCacheHeaders);
   return data.data as ContributionAnalytics;
 };
 

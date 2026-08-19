@@ -4,7 +4,7 @@
  */
 
 import React from "react";
-import { createBrowserRouter, RouterProvider, Routes, Route, Navigate } from "react-router-dom";
+import { createBrowserRouter, RouterProvider, Routes, Route, Navigate, useLocation } from "react-router-dom";
 import { AuthProvider, useAuth } from "./contexts/AuthContext";
 import Landing from "./pages/Landing";
 import Auth from "./pages/Auth";
@@ -34,7 +34,9 @@ const AdminRoute = ({ children }: { children: React.ReactNode }) => {
   return <>{children}</>;
 };
 
-const RootRoutes = () => (
+const RootRoutes = () => {
+  const location = useLocation();
+  return (
   <Routes>
     <Route path="/" element={<Landing />} />
     <Route path="/auth" element={<Auth />} />
@@ -56,7 +58,7 @@ const RootRoutes = () => (
                     <Route path="/timer/default" element={<DefaultTimer />} />
                     <Route path="/timer/custom" element={<CustomTimer />} />
                     <Route path="/dashboard" element={<Dashboard />} />
-                    <Route path="/contributions" element={<Contributions />} />
+                    <Route path="/contributions" element={<Contributions key={`contributions-${location.key}`} />} />
                     <Route path="/presets" element={<Presets />} />
                     <Route path="/music" element={<Music />} />
                     <Route path="/admin" element={<AdminRoute><Admin /></AdminRoute>} />
@@ -71,7 +73,8 @@ const RootRoutes = () => (
       }
     />
   </Routes>
-);
+  );
+};
 
 import { ThemeProvider } from "./contexts/ThemeContext";
 
