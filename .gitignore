@@ -29,4 +29,5 @@ dist/
 .DS_Store
 Thumbs.db
 
-FlowTime-Elevate/
+# Antigravity Rules
+.agents/

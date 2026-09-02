@@ -18,12 +18,16 @@ services:
       timeout: 5s
       retries: 10
       start_period: 5s
+    networks:
+      - flowtime_net
 
   redis:
     image: redis:7-alpine
     pull_policy: if_not_present
     ports:
       - "6379:6379"
+    networks:
+      - flowtime_net
 
   backend:
     build:
@@ -32,6 +36,7 @@ services:
     pull_policy: build
     environment:
       DATABASE_URL: postgres://flowtime:flowtime@db:5432/flowtime
+      EXPECT_EXISTING_DB: "true"
       REDIS_URL: redis://redis:6379/1
       DJANGO_SETTINGS_MODULE: config.settings
       FRONTEND_ORIGINS: http://localhost:3000,http://127.0.0.1:3000
@@ -46,10 +51,12 @@ services:
         condition: service_started
     ports:
       - "8000:8000"
+    networks:
+      - flowtime_net
 
   frontend:
     build:
-      context: ./FlowTime-Elevate
+      context: ./frontend
       args:
         VITE_API_URL: /api
       pull: false
@@ -58,6 +65,12 @@ services:
       - backend
     ports:
       - "3000:80"
+    networks:
+      - flowtime_net
 
 volumes:
   postgres_data:
+
+networks:
+  flowtime_net:
+    driver: bridge
